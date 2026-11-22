@@ -22,7 +22,7 @@ jobs:
       - name: Rename app
         run: |
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
-      - name: Replace icon v4
+      - name: Replace icon v5
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
@@ -36,21 +36,23 @@ jobs:
             [ -d "$D" ] || continue
             c=$((s/2))
             $IM "$ICON" -resize ${s}x${s}! $D/ic_launcher.png
-            $IM "$ICON" -resize ${s}x${s}! \( -size ${s}x${s} xc:none -fill white -draw "circle $c,$c $c,0" \) -compose DstIn -composite $D/ic_launcher_round.png
+            $IM -size ${s}x${s} xc:black -fill white -draw "circle $c,$c $c,0" /tmp/m.png
+            $IM "$ICON" -resize ${s}x${s}! /tmp/m.png -alpha off -compose CopyOpacity -composite $D/ic_launcher_round.png
             for t in icon_foreground icon_foreground_round icon_foreground_sa; do
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
-      - name: Replace intro logo
+      - name: Replace intro logo v2
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
           R=TMessagesProj/src/main/res
           find $R -name "intro_tg_plane.*" -delete
           mkdir -p $R/drawable-nodpi
-          $IM "$ICON" -resize 512x512! \( -size 512x512 xc:none -fill white -draw "circle 256,256 256,0" \) -compose DstIn -composite $R/drawable-nodpi/intro_tg_plane.png
+          $IM -size 512x512 xc:black -fill white -draw "circle 256,256 256,0" /tmp/mask.png
+          $IM "$ICON" -resize 512x512! /tmp/mask.png -alpha off -compose CopyOpacity -composite $R/drawable-nodpi/intro_tg_plane.png
           I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
-          sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0x00000000/" $I
+          sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
       - name: Build
         run: |
