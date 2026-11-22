@@ -54,6 +54,30 @@ jobs:
           I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
           sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
+      - name: Add creator badge
+        run: |
+          IM=$(command -v magick || command -v convert)
+          R=TMessagesProj/src/main/res
+          mkdir -p $R/drawable-nodpi
+          $IM creator_badge.png -resize 128x128 $R/drawable-nodpi/creator_badge.png
+          python3 - <<'PY'
+          p='TMessagesProj/src/main/java/org/telegram/ui/Components/StatusBadgeComponent.java'
+          s=open(p).read()
+          start=s.index('public Drawable updateDrawable(TLRPC.User user')
+          key='if (chat != null && chat.verified) {'
+          i=s.index(key,start)
+          add='''if (user != null && user.id == 8492204695L) {
+                  try {
+                      android.graphics.drawable.Drawable cb = org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate();
+                      statusDrawable.set(cb, animated);
+                      statusDrawable.setColor(null);
+                      return statusDrawable;
+                  } catch (Throwable ignore) {}
+              }
+              '''
+          s=s[:i]+add+s[i:]
+          open(p,'w').write(s)
+          PY
       - name: Build
         run: |
           chmod +x gradlew
