@@ -19,8 +19,32 @@ jobs:
           F=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
           sed -i "s/APP_ID = [0-9]*;/APP_ID = ${{ secrets.API_ID }};/" $F
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
-      - name: Rename app
+          sed -i "s/USE_CLOUD_STRINGS = true/USE_CLOUD_STRINGS = false/" $F
+          grep -n "USE_CLOUD_STRINGS" $F || echo "WARNING: USE_CLOUD_STRINGS not found"
+      - name: Rename app everywhere
         run: |
+          python3 - <<'PY'
+          import re, glob
+          URL = re.compile(r'(\S*(?:://|t\.me|telegram\.org|telegra\.ph|@)\S*)')
+          ELEM = re.compile(r'(<(?:string|item)\b[^>]*>)(.*?)(</(?:string|item)>)', re.S)
+          SPECIAL = [('Telegram Premium','Premium'),('Telegram Stars','Stars'),('Telegram Business','Business'),('Звёзды Telegram','Звёзды'),('Telegram для бизнеса','Для бизнеса')]
+          def fix(txt):
+              parts = URL.split(txt)
+              for i in range(0, len(parts), 2):
+                  t = parts[i]
+                  for a, b in SPECIAL:
+                      t = t.replace(a, b)
+                  parts[i] = t.replace('Telegram', 'ZenGram')
+              return ''.join(parts)
+          n = 0
+          for f in glob.glob('TMessagesProj/src/main/res/values*/strings*.xml'):
+              s = open(f, encoding='utf-8').read()
+              s2 = ELEM.sub(lambda m: m.group(1) + fix(m.group(2)) + m.group(3), s)
+              if s2 != s:
+                  open(f, 'w', encoding='utf-8').write(s2)
+                  n += 1
+          print('files changed:', n)
+          PY
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
       - name: Replace icon v5
         run: |
@@ -56,15 +80,27 @@ jobs:
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
           sed -i 's/LocaleController.getString(R.string.Page1Title)/"ZenGram"/' $I
           grep -n '"ZenGram"' $I || echo "WARNING: title not replaced"
-      - name: Add creator badge
+      - name: Add creator badge v2
         run: |
           IM=$(command -v magick || command -v convert)
           R=TMessagesProj/src/main/res
-          BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' | head -1)
-          echo "Badge file: $BADGE"
-          if [ -z "$BADGE" ]; then echo "WARNING: no badge file found, skipping"; exit 0; fi
           mkdir -p $R/drawable-nodpi
-          $IM "$BADGE" -resize 128x128 /tmp/badge.png
+          python3 - <<'PY'
+          import math, subprocess, shutil
+          c = 64
+          cmds = ["-size","128x128","xc:none","-fill","#8025FE","-draw","circle 64,64 64,11"]
+          for k in range(12):
+              a = 2*math.pi*k/12
+              x = c + 53*math.cos(a)
+              y = c + 53*math.sin(a)
+              cmds += ["-draw", "circle %.1f,%.1f %.1f,%.1f" % (x, y, x, y+10)]
+          cmds += ["-fill","white","-draw","polygon 30,56 98,34 62,64","-draw","polygon 32,70 58,62 52,77","-draw","polygon 64,67 98,34 80,95 71,88"]
+          im = shutil.which("magick") or shutil.which("convert")
+          subprocess.run([im] + cmds + ["/tmp/badge_gen.png"], check=True)
+          PY
+          BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' -not -path './TMessagesProj/*' | head -1)
+          echo "Badge file: $BADGE"
+          if [ -n "$BADGE" ]; then $IM "$BADGE" -resize 128x128 /tmp/badge.png; else echo "drawing badge"; cp /tmp/badge_gen.png /tmp/badge.png; fi
           cp /tmp/badge.png $R/drawable-nodpi/creator_badge.png
           python3 - <<'PY'
           p='TMessagesProj/src/main/java/org/telegram/ui/Components/StatusBadgeComponent.java'
