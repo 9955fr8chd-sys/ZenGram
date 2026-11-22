@@ -21,7 +21,7 @@ jobs:
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
       - name: Rename app
         run: |
-          find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's|(<string name="AppName(Beta)?"[^>]*>)[^<]*</string>|\1ZenGram</string>|' {} +
+          find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's|(<string name="(AppName\|AppNameBeta\|Page1Title)"[^>]*>)[^<]*</string>|\1ZenGram</string>|' {} +
       - name: Replace icon v3
         run: |
           sudo apt-get update
