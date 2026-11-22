@@ -19,6 +19,22 @@ jobs:
           F=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
           sed -i "s/APP_ID = [0-9]*;/APP_ID = ${{ secrets.API_ID }};/" $F
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
+      - name: Replace icon
+        run: |
+          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | head -1)
+          R=TMessagesProj/src/main/res
+          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+            IFS=: read n s f <<< "$d"
+            D=$R/mipmap-$n
+            [ -d "$D" ] || continue
+            c=$((s/2))
+            convert "$ICON" -resize ${s}x${s}! $D/ic_launcher.png
+            convert "$ICON" -resize ${s}x${s}! \( -size ${s}x${s} xc:none -fill white -draw "circle $c,$c $c,0" \) -compose DstIn -composite $D/ic_launcher_round.png
+            p=$((f*66/100))
+            for t in icon_foreground icon_foreground_round icon_foreground_sa; do
+              convert "$ICON" -resize ${p}x${p}! -background none -gravity center -extent ${f}x${f} $D/$t.png
+            done
+          done
       - name: Build
         run: |
           chmod +x gradlew
