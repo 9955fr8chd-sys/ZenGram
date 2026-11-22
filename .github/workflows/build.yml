@@ -21,7 +21,7 @@ jobs:
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
       - name: Rename app
         run: |
-          find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's|(<string name="(AppName\|AppNameBeta\|Page1Title)"[^>]*>)[^<]*</string>|\1ZenGram</string>|' {} +
+          find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
       - name: Replace icon v3
         run: |
           sudo apt-get update
@@ -40,6 +40,15 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
+      - name: Replace intro logo
+        run: |
+          IM=$(command -v magick || command -v convert)
+          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | head -1)
+          R=TMessagesProj/src/main/res
+          find $R -name "intro_tg_plane.*" -delete
+          mkdir -p $R/drawable-nodpi
+          $IM "$ICON" -resize 512x512! \( -size 512x512 xc:none -fill white -draw "circle 256,256 256,0" \) -compose DstIn -composite $R/drawable-nodpi/intro_tg_plane.png
+          sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0x00000000/" TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
       - name: Build
         run: |
           chmod +x gradlew
