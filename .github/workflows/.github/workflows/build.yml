@@ -1,0 +1,27 @@
+name: Build ZenGram
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Insert API keys
+        run: |
+          F=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+          sed -i "s/APP_ID = [0-9]*;/APP_ID = ${{ secrets.API_ID }};/" $F
+          sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew :TMessagesProj_App:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZenGram-apk
+          path: TMessagesProj_App/build/outputs/apk/**/*.apk
