@@ -26,8 +26,9 @@ jobs:
           python3 - <<'PY'
           import re, glob
           URL = re.compile(r'(\S*(?:://|t\.me|telegram\.org|telegra\.ph|@)\S*)')
-          ELEM = re.compile(r'(<(?:string|item)\b[^>]*>)(.*?)(</(?:string|item)>)', re.S)
+          ELEM = re.compile(r'(<(?:string|item)\b([^>]*)>)(.*?)(</(?:string|item)>)', re.S)
           SPECIAL = [('Telegram Premium','Premium'),('Telegram Stars','Stars'),('Telegram Business','Business'),('Звёзды Telegram','Звёзды'),('Telegram для бизнеса','Для бизнеса')]
+          KEEP = re.compile(r'TelegramFaq|TelegramFeatures', re.I)
           def fix(txt):
               parts = URL.split(txt)
               for i in range(0, len(parts), 2):
@@ -36,16 +37,45 @@ jobs:
                       t = t.replace(a, b)
                   parts[i] = t.replace('Telegram', 'ZenGram')
               return ''.join(parts)
+          def repl(m):
+              nm = re.search(r'name="([^"]+)"', m.group(2))
+              if nm and KEEP.fullmatch(nm.group(1)):
+                  return m.group(0)
+              return m.group(1) + fix(m.group(3)) + m.group(4)
           n = 0
           for f in glob.glob('TMessagesProj/src/main/res/values*/strings*.xml'):
               s = open(f, encoding='utf-8').read()
-              s2 = ELEM.sub(lambda m: m.group(1) + fix(m.group(2)) + m.group(3), s)
+              s2 = ELEM.sub(repl, s)
               if s2 != s:
                   open(f, 'w', encoding='utf-8').write(s2)
                   n += 1
           print('files changed:', n)
+          note = {'values/strings.xml': ' Unofficial client built on the Telegram platform.', 'values-ru/strings.xml': ' Неофициальный клиент на платформе Telegram.'}
+          for rel, add in note.items():
+              f = 'TMessagesProj/src/main/res/' + rel
+              s = open(f, encoding='utf-8').read()
+              s2 = re.sub(r'(<string name="Page1Message"[^>]*>)(.*?)(</string>)', lambda m: m.group(1) + m.group(2) + add + m.group(3), s, count=1, flags=re.S)
+              print(rel, 'intro note added' if s2 != s else 'WARNING: Page1Message not found')
+              open(f, 'w', encoding='utf-8').write(s2)
           PY
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
+      - name: Report remaining Telegram words
+        run: |
+          {
+            echo "## Telegram leftovers"
+            echo "### Strings (default and ru)"
+            echo '```'
+            grep -n "Telegram" TMessagesProj/src/main/res/values/strings.xml TMessagesProj/src/main/res/values-ru/strings.xml | cut -c1-200 | head -150
+            echo '```'
+            echo "### Java string literals"
+            echo '```'
+            grep -rnE '"[^"]*Telegram[^"]*"' --include=*.java TMessagesProj/src/main/java | grep -v 'org\.telegram' | cut -c1-200 | head -150
+            echo '```'
+            echo "### Files with telegram in the name"
+            echo '```'
+            find TMessagesProj/src/main/res -iname '*telegram*' | head -50
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Replace icon v5
         run: |
           sudo apt-get update
@@ -66,15 +96,20 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
-      - name: Replace intro logo v3
+      - name: Replace intro logo v4
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
+          echo "Icon file: $ICON"
           R=TMessagesProj/src/main/res
           find $R -name "intro_tg_plane.*" -delete
           mkdir -p $R/drawable-nodpi
-          $IM -size 512x512 xc:black -fill white -draw "circle 256,256 256,0" /tmp/mask.png
-          $IM "$ICON" -resize 512x512! /tmp/mask.png -alpha off -compose CopyOpacity -composite $R/drawable-nodpi/intro_tg_plane.png
+          $IM "$ICON" -channel RGB -separate -evaluate-sequence Max -level 31%,51% /tmp/a.png
+          $IM "$ICON" /tmp/a.png -alpha off -compose CopyOpacity -composite -trim +repage /tmp/plane.png
+          W=$($IM /tmp/plane.png -format %w info:)
+          SIDE=$((W*100/64))
+          echo "Plane width: $W, canvas: $SIDE"
+          $IM /tmp/plane.png -background none -gravity center -extent ${SIDE}x${SIDE} -resize 512x512 $R/drawable-nodpi/intro_tg_plane.png
           I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
           sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
