@@ -22,12 +22,13 @@ jobs:
       - name: Rename app
         run: |
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
-      - name: Replace icon v3
+      - name: Replace icon v4
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
           IM=$(command -v magick || command -v convert)
-          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | head -1)
+          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
+          echo "Icon file: $ICON"
           R=TMessagesProj/src/main/res
           for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
             IFS=: read n s f <<< "$d"
@@ -43,12 +44,14 @@ jobs:
       - name: Replace intro logo
         run: |
           IM=$(command -v magick || command -v convert)
-          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | head -1)
+          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
           R=TMessagesProj/src/main/res
           find $R -name "intro_tg_plane.*" -delete
           mkdir -p $R/drawable-nodpi
           $IM "$ICON" -resize 512x512! \( -size 512x512 xc:none -fill white -draw "circle 256,256 256,0" \) -compose DstIn -composite $R/drawable-nodpi/intro_tg_plane.png
-          sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0x00000000/" TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
+          I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
+          sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0x00000000/" $I
+          sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
       - name: Build
         run: |
           chmod +x gradlew
