@@ -60,8 +60,12 @@ jobs:
         run: |
           IM=$(command -v magick || command -v convert)
           R=TMessagesProj/src/main/res
+          BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' | head -1)
+          echo "Badge file: $BADGE"
+          if [ -z "$BADGE" ]; then echo "WARNING: no badge file found, skipping"; exit 0; fi
           mkdir -p $R/drawable-nodpi
-          $IM creator_badge.png -resize 128x128 $R/drawable-nodpi/creator_badge.png
+          $IM "$BADGE" -resize 128x128 /tmp/badge.png
+          cp /tmp/badge.png $R/drawable-nodpi/creator_badge.png
           python3 - <<'PY'
           p='TMessagesProj/src/main/java/org/telegram/ui/Components/StatusBadgeComponent.java'
           s=open(p).read()
