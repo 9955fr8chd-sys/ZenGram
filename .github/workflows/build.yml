@@ -42,7 +42,7 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
-      - name: Replace intro logo v2
+      - name: Replace intro logo v3
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
@@ -54,6 +54,8 @@ jobs:
           I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
           sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
+          sed -i 's/LocaleController.getString(R.string.Page1Title)/"ZenGram"/' $I
+          grep -n '"ZenGram"' $I || echo "WARNING: title not replaced"
       - name: Add creator badge
         run: |
           IM=$(command -v magick || command -v convert)
