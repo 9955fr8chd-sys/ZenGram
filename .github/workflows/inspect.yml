@@ -1,0 +1,35 @@
+name: Inspect code
+on:
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print code
+        run: |
+          J=TMessagesProj/src/main/java/org/telegram
+          {
+            echo "## 1. ChatAvatarContainer 950-1000"
+            echo '```'
+            awk 'NR>=950 && NR<=1000 {printf "%d: %s\n", NR, substr($0,1,150)}' $J/ui/Components/ChatAvatarContainer.java
+            echo '```'
+            echo "## 2. DialogsActivity status"
+            echo '```'
+            grep -n -i 'statusDrawable\|emojiStatus\|StatusBadge' $J/ui/DialogsActivity.java | cut -c1-150 | head -40
+            echo '```'
+            echo "## 3. LocaleController internals"
+            echo '```'
+            N=$(grep -n 'getStringInternal(String key, String fallback' $J/messenger/LocaleController.java | head -1 | cut -d: -f1)
+            echo "line $N"
+            [ -n "$N" ] && awk -v s=$N 'NR>=s && NR<=s+25 {printf "%d: %s\n", NR, substr($0,1,150)}' $J/messenger/LocaleController.java
+            echo '```'
+            echo "## 4. Version string"
+            echo '```'
+            grep -rn 'for Android v\|TelegramForAndroid' --include=*.java TMessagesProj/src/main/java | cut -c1-170 | head -10
+            echo '```'
+            echo "## 5. AppName in DialogsActivity"
+            echo '```'
+            grep -n 'R.string.AppName' $J/ui/DialogsActivity.java | cut -c1-150 | head -10
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
