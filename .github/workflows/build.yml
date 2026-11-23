@@ -19,8 +19,6 @@ jobs:
           F=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
           sed -i "s/APP_ID = [0-9]*;/APP_ID = ${{ secrets.API_ID }};/" $F
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
-          sed -i "s/USE_CLOUD_STRINGS = true/USE_CLOUD_STRINGS = false/" $F
-          grep -n "USE_CLOUD_STRINGS" $F || echo "WARNING: USE_CLOUD_STRINGS not found"
       - name: Rename app everywhere
         run: |
           python3 - <<'PY'
@@ -50,13 +48,6 @@ jobs:
                   open(f, 'w', encoding='utf-8').write(s2)
                   n += 1
           print('files changed:', n)
-          note = {'values/strings.xml': ' Unofficial client built on the Telegram platform.', 'values-ru/strings.xml': ' Неофициальный клиент на платформе Telegram.'}
-          for rel, add in note.items():
-              f = 'TMessagesProj/src/main/res/' + rel
-              s = open(f, encoding='utf-8').read()
-              s2 = re.sub(r'(<string name="Page1Message"[^>]*>)(.*?)(</string>)', lambda m: m.group(1) + m.group(2) + add + m.group(3), s, count=1, flags=re.S)
-              print(rel, 'intro note added' if s2 != s else 'WARNING: Page1Message not found')
-              open(f, 'w', encoding='utf-8').write(s2)
           PY
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
       - name: Report remaining Telegram words
@@ -96,7 +87,7 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
-      - name: Replace intro logo v4
+      - name: Replace intro logo v5
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
@@ -115,6 +106,8 @@ jobs:
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
           sed -i 's/LocaleController.getString(R.string.Page1Title)/"ZenGram"/' $I
           grep -n '"ZenGram"' $I || echo "WARNING: title not replaced"
+          sed -i 's/LocaleController.getString(R.string.Page1Message)/(LocaleController.getString(R.string.Page1Message) + " Unofficial client on the Telegram platform. Неофициальный клиент на платформе Telegram.")/' $I
+          grep -c 'Unofficial client' $I || echo "WARNING: intro note not added"
       - name: Add creator badge v2
         run: |
           IM=$(command -v magick || command -v convert)
