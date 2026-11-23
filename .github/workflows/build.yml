@@ -50,23 +50,6 @@ jobs:
           print('files changed:', n)
           PY
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
-      - name: Report remaining Telegram words
-        run: |
-          {
-            echo "## Telegram leftovers"
-            echo "### Strings (default and ru)"
-            echo '```'
-            grep -n "Telegram" TMessagesProj/src/main/res/values/strings.xml TMessagesProj/src/main/res/values-ru/strings.xml | cut -c1-200 | head -150
-            echo '```'
-            echo "### Java string literals"
-            echo '```'
-            grep -rnE '"[^"]*Telegram[^"]*"' --include=*.java TMessagesProj/src/main/java | grep -v 'org\.telegram' | cut -c1-200 | head -150
-            echo '```'
-            echo "### Files with telegram in the name"
-            echo '```'
-            find TMessagesProj/src/main/res -iname '*telegram*' | head -50
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
       - name: Replace icon v5
         run: |
           sudo apt-get update
@@ -87,7 +70,7 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
-      - name: Replace intro logo v5
+      - name: Replace intro logo v6
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
@@ -106,9 +89,9 @@ jobs:
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
           sed -i 's/LocaleController.getString(R.string.Page1Title)/"ZenGram"/' $I
           grep -n '"ZenGram"' $I || echo "WARNING: title not replaced"
-          sed -i 's/LocaleController.getString(R.string.Page1Message)/(LocaleController.getString(R.string.Page1Message) + " Unofficial client on the Telegram platform. Неофициальный клиент на платформе Telegram.")/' $I
-          grep -c 'Unofficial client' $I || echo "WARNING: intro note not added"
-      - name: Add creator badge v2
+          sed -i 's/LocaleController.getString(R.string.Page1Message)/(LocaleController.getString(R.string.Page1Message) + org.telegram.messenger.ZenGramBadge.note())/' $I
+          grep -c 'ZenGramBadge.note' $I || echo "WARNING: intro note not added"
+      - name: Add creator badge image
         run: |
           IM=$(command -v magick || command -v convert)
           R=TMessagesProj/src/main/res
@@ -128,25 +111,110 @@ jobs:
           PY
           BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' -not -path './TMessagesProj/*' | head -1)
           echo "Badge file: $BADGE"
-          if [ -n "$BADGE" ]; then $IM "$BADGE" -resize 128x128 /tmp/badge.png; else echo "drawing badge"; cp /tmp/badge_gen.png /tmp/badge.png; fi
-          cp /tmp/badge.png $R/drawable-nodpi/creator_badge.png
+          if [ -n "$BADGE" ]; then SRC="$BADGE"; else echo "drawing badge"; SRC=/tmp/badge_gen.png; fi
+          $IM "$SRC" -resize 64x64 $R/drawable-nodpi/creator_badge.png
+      - name: Creator badge and ZenGram words everywhere
+        run: |
           python3 - <<'PY'
-          p='TMessagesProj/src/main/java/org/telegram/ui/Components/StatusBadgeComponent.java'
-          s=open(p).read()
-          start=s.index('public Drawable updateDrawable(TLRPC.User user')
-          key='if (chat != null && chat.verified) {'
-          i=s.index(key,start)
-          add='''if (user != null && user.id == 8492204695L) {
+          import re, glob
+          J = 'TMessagesProj/src/main/java/org/telegram/'
+          HELPER = r'''package org.telegram.messenger;
+
+          import org.telegram.tgnet.TLRPC;
+
+          public class ZenGramBadge {
+              public static final long CREATOR_ID = 8492204695L;
+              public static final long MAGIC = 6710000001234L;
+              private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("\\S*(?:://|t\\.me|telegram\\.org|telegra\\.ph|@)\\S*");
+
+              public static void apply(TLRPC.User u) {
                   try {
-                      android.graphics.drawable.Drawable cb = org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate();
-                      statusDrawable.set(cb, animated);
-                      statusDrawable.setColor(null);
-                      return statusDrawable;
+                      if (u != null && u.id == CREATOR_ID) {
+                          TLRPC.TL_emojiStatus s = new TLRPC.TL_emojiStatus();
+                          s.document_id = MAGIC;
+                          u.emoji_status = s;
+                          u.premium = true;
+                      }
                   } catch (Throwable ignore) {}
               }
-              '''
-          s=s[:i]+add+s[i:]
-          open(p,'w').write(s)
+
+              public static String note() {
+                  return "ru".equals(java.util.Locale.getDefault().getLanguage()) ? " Неофициальный клиент на платформе Telegram." : " Unofficial client built on the Telegram platform.";
+              }
+
+              private static String fix(String t) {
+                  t = t.replace("Telegram Premium", "Premium").replace("Telegram Stars", "Stars").replace("Telegram Business", "Business").replace("Звёзды Telegram", "Звёзды").replace("Telegram для бизнеса", "Для бизнеса");
+                  return t.replace("Telegram", "ZenGram");
+              }
+
+              public static String brand(String s) {
+                  if (s == null || s.indexOf("Telegram") < 0) return s;
+                  if (s.equals("Вопросы о Telegram") || s.equals("Возможности Telegram") || s.equals("Telegram FAQ") || s.equals("Telegram Features")) return s;
+                  StringBuilder out = new StringBuilder();
+                  java.util.regex.Matcher m = URL.matcher(s);
+                  int last = 0;
+                  while (m.find()) {
+                      out.append(fix(s.substring(last, m.start())));
+                      out.append(m.group());
+                      last = m.end();
+                  }
+                  out.append(fix(s.substring(last)));
+                  return out.toString();
+              }
+          }
+          '''
+          open(J + 'messenger/ZenGramBadge.java', 'w', encoding='utf-8').write(HELPER)
+
+          p = J + 'ui/Components/AnimatedEmojiDrawable.java'
+          s = open(p, encoding='utf-8').read()
+          i = s.index('class SwapAnimatedEmojiDrawable')
+          head, tail = s[:i], s[i:]
+          pat = re.compile(r'(public\s+void\s+set\(\s*(?:final\s+)?(Long|long)\s+(\w+)\s*,\s*(?:final\s+)?boolean\s+(\w+)\s*\)\s*\{)')
+          def sw(m):
+              typ, d, a = m.group(2), m.group(3), m.group(4)
+              if typ == 'Long':
+                  cond = '%s != null && %s.longValue() == org.telegram.messenger.ZenGramBadge.MAGIC' % (d, d)
+              else:
+                  cond = '%s == org.telegram.messenger.ZenGramBadge.MAGIC' % d
+              code = ' try { set(org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate(), ' + a + '); return; } catch (Throwable ignore) {} '
+              return m.group(1) + '\n if (' + cond + ') {' + code + '}\n'
+          tail, n1 = pat.subn(sw, tail)
+          open(p, 'w', encoding='utf-8').write(head + tail)
+          print('Swap.set patched:', n1)
+
+          p = J + 'messenger/MessagesController.java'
+          s = open(p, encoding='utf-8').read()
+          pat = re.compile(r'(public\s+(?:synchronized\s+)?(?:boolean|void)\s+putUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*,[^)]*\)\s*\{)')
+          s, n2 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('putUser patched:', n2)
+
+          p = J + 'messenger/UserConfig.java'
+          s = open(p, encoding='utf-8').read()
+          pat = re.compile(r'(public\s+(?:synchronized\s+)?void\s+setCurrentUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*\)\s*\{)')
+          s, n3 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('setCurrentUser patched:', n3)
+
+          p = J + 'messenger/LocaleController.java'
+          s = open(p, encoding='utf-8').read()
+          m = re.search(r'private\s+String\s+getStringInte\w*\([^)]*\)\s*\{', s)
+          n4 = 0
+          if m:
+              j = s.index('return value;', m.end())
+              s = s[:j] + 'return ZenGramBadge.brand(value);' + s[j + len('return value;'):]
+              n4 = 1
+          open(p, 'w', encoding='utf-8').write(s)
+          print('getString patched:', n4)
+
+          n5 = 0
+          for f in glob.glob('TMessagesProj/src/main/java/**/*.java', recursive=True):
+              t = open(f, encoding='utf-8').read()
+              t2 = t.replace('Telegram for Android v', 'ZenGram for Android v').replace('Telegram для Android v', 'ZenGram для Android v')
+              if t2 != t:
+                  open(f, 'w', encoding='utf-8').write(t2)
+                  n5 += 1
+          print('version literals patched in files:', n5)
           PY
       - name: Build
         run: |
