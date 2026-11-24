@@ -70,6 +70,29 @@ jobs:
               $IM "$ICON" -resize ${f}x${f}! $D/$t.png
             done
           done
+      - name: Alternative icons in colors
+        run: |
+          IM=$(command -v magick || command -v convert)
+          ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
+          R=TMessagesProj/src/main/res
+          for k in 2:64 3:25 4:169 5:131 6:153; do
+            n=${k%%:*}
+            h=${k##*:}
+            $IM "$ICON" -modulate 100,100,$h /tmp/v$n.png
+            for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+              IFS=: read dn s f <<< "$d"
+              D=$R/mipmap-$dn
+              [ -d "$D" ] || continue
+              c=$((s/2))
+              $IM -size ${s}x${s} xc:black -fill white -draw "circle $c,$c $c,0" /tmp/m2.png
+              [ -f $D/icon_${n}_launcher.png ] && $IM /tmp/v$n.png -resize ${s}x${s}! $D/icon_${n}_launcher.png
+              [ -f $D/icon_${n}_launcher_round.png ] && $IM /tmp/v$n.png -resize ${s}x${s}! /tmp/m2.png -alpha off -compose CopyOpacity -composite $D/icon_${n}_launcher_round.png
+              for t in foreground foreground_round foreground_sa background_sa; do
+                [ -f $D/icon_${n}_$t.png ] && $IM /tmp/v$n.png -resize ${f}x${f}! $D/icon_${n}_$t.png
+              done
+            done
+          done
+          true
       - name: Replace intro logo v6
         run: |
           IM=$(command -v magick || command -v convert)
@@ -112,7 +135,7 @@ jobs:
           BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' -not -path './TMessagesProj/*' | head -1)
           echo "Badge file: $BADGE"
           if [ -n "$BADGE" ]; then SRC="$BADGE"; else echo "drawing badge"; SRC=/tmp/badge_gen.png; fi
-          $IM "$SRC" -resize 64x64 $R/drawable-nodpi/creator_badge.png
+          $IM "$SRC" -resize 96x96 $R/drawable-nodpi/creator_badge.png
       - name: Creator badge and ZenGram words everywhere
         run: |
           python3 - <<'PY'
@@ -169,7 +192,10 @@ jobs:
           s = open(p, encoding='utf-8').read()
           i = s.index('class SwapAnimatedEmojiDrawable')
           head, tail = s[:i], s[i:]
-          pat = re.compile(r'(public\s+void\s+set\(\s*(?:final\s+)?(Long|long)\s+(\w+)\s*,\s*(?:final\s+)?boolean\s+(\w+)\s*\)\s*\{)')
+          print('--- Swap set signatures:')
+          for sg in re.findall(r'public\s+[^\n{;]*\bset\([^)]*\)\s*\{', tail):
+              print('   ', sg.strip())
+          pat = re.compile(r'(public\s+void\s+set\(\s*(?:@\w+\s+)?(?:final\s+)?(Long|long)\s+(\w+)\s*,\s*(?:(?:@\w+\s+)?(?:final\s+)?int\s+\w+\s*,\s*)?(?:final\s+)?boolean\s+(\w+)\s*\)\s*\{)')
           def sw(m):
               typ, d, a = m.group(2), m.group(3), m.group(4)
               if typ == 'Long':
@@ -182,22 +208,28 @@ jobs:
           open(p, 'w', encoding='utf-8').write(head + tail)
           print('Swap.set patched:', n1)
 
-          p = J + 'messenger/MessagesController.java'
-          s = open(p, encoding='utf-8').read()
-          pat = re.compile(r'(public\s+(?:synchronized\s+)?(?:boolean|void)\s+putUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*,[^)]*\)\s*\{)')
-          s, n2 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
-          open(p, 'w', encoding='utf-8').write(s)
-          print('putUser patched:', n2)
-
-          p = J + 'messenger/UserConfig.java'
-          s = open(p, encoding='utf-8').read()
-          pat = re.compile(r'(public\s+(?:synchronized\s+)?void\s+setCurrentUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*\)\s*\{)')
-          s, n3 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
-          open(p, 'w', encoding='utf-8').write(s)
-          print('setCurrentUser patched:', n3)
+          if n1 > 0:
+              p = J + 'messenger/MessagesController.java'
+              s = open(p, encoding='utf-8').read()
+              pat = re.compile(r'(public\s+(?:synchronized\s+)?(?:boolean|void)\s+putUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*,[^)]*\)\s*\{)')
+              s, n2 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
+              open(p, 'w', encoding='utf-8').write(s)
+              print('putUser patched:', n2)
+              p = J + 'messenger/UserConfig.java'
+              s = open(p, encoding='utf-8').read()
+              pat = re.compile(r'(public\s+(?:synchronized\s+)?void\s+setCurrentUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*\)\s*\{)')
+              s, n3 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
+              open(p, 'w', encoding='utf-8').write(s)
+              print('setCurrentUser patched:', n3)
+          else:
+              print('WARNING: badge swap NOT applied, real status stays')
 
           p = J + 'messenger/LocaleController.java'
           s = open(p, encoding='utf-8').read()
+          c1 = len(re.findall(r'ApplicationLoader\.applicationContext\.getString\(\s*res\s*\)', s))
+          s = re.sub(r'ApplicationLoader\.applicationContext\.getString\(\s*res\s*\)', 'ZenGramBadge.brand(ApplicationLoader.applicationContext.getString(res))', s)
+          c2 = len(re.findall(r'localeValues\.get\(\s*key\s*\)', s))
+          s = re.sub(r'(localeValues\.get\(\s*key\s*\))', r'ZenGramBadge.brand(\1)', s)
           m = re.search(r'private\s+String\s+getStringInte\w*\([^)]*\)\s*\{', s)
           n4 = 0
           if m:
@@ -205,7 +237,7 @@ jobs:
               s = s[:j] + 'return ZenGramBadge.brand(value);' + s[j + len('return value;'):]
               n4 = 1
           open(p, 'w', encoding='utf-8').write(s)
-          print('getString patched:', n4)
+          print('LocaleController: resource getString wrapped:', c1, ', localeValues.get wrapped:', c2, ', getStringInternal:', n4)
 
           n5 = 0
           for f in glob.glob('TMessagesProj/src/main/java/**/*.java', recursive=True):
@@ -216,6 +248,14 @@ jobs:
                   n5 += 1
           print('version literals patched in files:', n5)
           PY
+      - name: Report hard-coded Telegram words
+        run: |
+          {
+            echo "## Java string literals with Telegram"
+            echo '```'
+            grep -rnE '"[^"]*Telegram[^"]*"' --include=*.java TMessagesProj/src/main/java | grep -v 'org\.telegram' | cut -c1-200 | head -120
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Build
         run: |
           chmod +x gradlew
