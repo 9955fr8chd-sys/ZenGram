@@ -91,7 +91,7 @@ jobs:
             done
           done
           true
-      - name: Replace intro logo v7
+      - name: Replace intro logo v8
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
@@ -113,8 +113,13 @@ jobs:
           sed -i 's/LocaleController.getString(R.string.Page1Message)/(LocaleController.getString(R.string.Page1Message) + org.telegram.messenger.ZenGramBadge.note())/' $I
           grep -c 'ZenGramBadge.note' $I || echo "WARNING: intro note not added"
           D=TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+          echo "ImageSpan(logoDrawable) lines before: $(grep -c 'ImageSpan(logoDrawable)' $D)"
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $D
-          grep -c 'ImageSpan(logoDrawable)' $D || echo "chat list title image removed"
+          echo "ImageSpan(logoDrawable) lines after: $(grep -c 'ImageSpan(logoDrawable)' $D)"
+          echo "telegram_logo_2 files:"
+          find $R -name 'telegram_logo_2.*'
+          find $R -name 'telegram_logo_2.*' -delete
+          $IM -background none -fill white -font DejaVu-Sans-Bold -pointsize 56 label:ZenGram -trim +repage -bordercolor none -border 4x4 $R/drawable-nodpi/telegram_logo_2.png
       - name: Add creator badge image
         run: |
           IM=$(command -v magick || command -v convert)
@@ -151,124 +156,29 @@ jobs:
               public static final long MAGIC = 6710000001234L;
               private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("\\S*(?:://|t\\.me|telegram\\.org|telegra\\.ph|@)\\S*");
 
+              public static class NoTint extends android.graphics.drawable.BitmapDrawable {
+                  public NoTint(android.content.res.Resources r, android.graphics.Bitmap b) {
+                      super(r, b);
+                      setFilterBitmap(true);
+                  }
+                  @Override public void setColorFilter(android.graphics.ColorFilter f) {}
+                  @Override public void setTint(int t) {}
+                  @Override public void setTintList(android.content.res.ColorStateList l) {}
+                  @Override public void setTintMode(android.graphics.PorterDuff.Mode m) {}
+              }
+
+              public static android.graphics.drawable.Drawable badge() {
+                  try {
+                      android.content.res.Resources r = ApplicationLoader.applicationContext.getResources();
+                      android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeResource(r, R.drawable.creator_badge);
+                      return b == null ? null : new NoTint(r, b);
+                  } catch (Throwable t) {
+                      return null;
+                  }
+              }
+
               public static void apply(TLRPC.User u) {
                   try {
                       if (u != null && u.id == CREATOR_ID) {
                           TLRPC.TL_emojiStatus s = new TLRPC.TL_emojiStatus();
                           s.document_id = MAGIC;
-                          u.emoji_status = s;
-                          u.premium = true;
-                      }
-                  } catch (Throwable ignore) {}
-              }
-
-              public static String note() {
-                  return "ru".equals(java.util.Locale.getDefault().getLanguage()) ? " Неофициальный клиент на платформе Telegram." : " Unofficial client built on the Telegram platform.";
-              }
-
-              private static String fix(String t) {
-                  t = t.replace("Telegram Premium", "Premium").replace("Telegram Stars", "Stars").replace("Telegram Business", "Business").replace("Звёзды Telegram", "Звёзды").replace("Telegram для бизнеса", "Для бизнеса");
-                  return t.replace("Telegram", "ZenGram");
-              }
-
-              public static String brand(String s) {
-                  if (s == null || s.indexOf("Telegram") < 0) return s;
-                  if (s.equals("Вопросы о Telegram") || s.equals("Возможности Telegram") || s.equals("Telegram FAQ") || s.equals("Telegram Features")) return s;
-                  StringBuilder out = new StringBuilder();
-                  java.util.regex.Matcher m = URL.matcher(s);
-                  int last = 0;
-                  while (m.find()) {
-                      out.append(fix(s.substring(last, m.start())));
-                      out.append(m.group());
-                      last = m.end();
-                  }
-                  out.append(fix(s.substring(last)));
-                  return out.toString();
-              }
-
-              public static void brandMap(java.util.Map m) {
-                  if (m == null) return;
-                  try {
-                      for (Object o : m.entrySet()) {
-                          java.util.Map.Entry e = (java.util.Map.Entry) o;
-                          Object v = e.getValue();
-                          if (v instanceof String && ((String) v).indexOf("Telegram") >= 0) {
-                              e.setValue(brand((String) v));
-                          }
-                      }
-                  } catch (Throwable ignore) {}
-              }
-          }
-          '''
-          open(J + 'messenger/ZenGramBadge.java', 'w', encoding='utf-8').write(HELPER)
-
-          p = J + 'ui/Components/AnimatedEmojiDrawable.java'
-          s = open(p, encoding='utf-8').read()
-          i = s.index('class SwapAnimatedEmojiDrawable')
-          head, tail = s[:i], s[i:]
-          pat = re.compile(r'(public\s+boolean\s+set\(\s*long\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*boolean\s+(\w+)\s*\)\s*\{)')
-          def sw(m):
-              d, a = m.group(2), m.group(4)
-              code = 'try { set(org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate(), %s); return true; } catch (Throwable ignore) {}' % a
-              return m.group(1) + '\n if (%s == org.telegram.messenger.ZenGramBadge.MAGIC) { %s }\n' % (d, code)
-          tail, n1 = pat.subn(sw, tail, count=1)
-          open(p, 'w', encoding='utf-8').write(head + tail)
-          print('Swap.set patched:', n1)
-
-          if n1 > 0:
-              p = J + 'messenger/MessagesController.java'
-              s = open(p, encoding='utf-8').read()
-              pat = re.compile(r'(public\s+(?:synchronized\s+)?(?:boolean|void)\s+putUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*,[^)]*\)\s*\{)')
-              s, n2 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
-              open(p, 'w', encoding='utf-8').write(s)
-              print('putUser patched:', n2)
-              p = J + 'messenger/UserConfig.java'
-              s = open(p, encoding='utf-8').read()
-              pat = re.compile(r'(public\s+(?:synchronized\s+)?void\s+setCurrentUser\(\s*(?:final\s+)?TLRPC\.User\s+(\w+)\s*\)\s*\{)')
-              s, n3 = pat.subn(lambda m: m.group(1) + '\n ZenGramBadge.apply(' + m.group(2) + ');\n', s)
-              open(p, 'w', encoding='utf-8').write(s)
-              print('setCurrentUser patched:', n3)
-          else:
-              print('WARNING: badge swap NOT applied, real status stays')
-
-          p = J + 'messenger/LocaleController.java'
-          s = open(p, encoding='utf-8').read()
-          s, c1 = re.subn(r'ApplicationLoader\.applicationContext\.getString\(([^()]*)\)', r'ZenGramBadge.brand(ApplicationLoader.applicationContext.getString(\1))', s)
-          s, c2 = re.subn(r'(getInstance\(\)\.getStringV2\([^()]*\))', r'ZenGramBadge.brand(\1)', s)
-          s, c3 = re.subn(r'(return\s+)(getStringV2\([^()]*\))', r'\1ZenGramBadge.brand(\2)', s)
-          s, c4 = re.subn(r'(localeValues\s*=\s*getLocaleFileStrings\([^;]*\);)', r'\1 ZenGramBadge.brandMap(localeValues);', s)
-          s, c5 = re.subn(r'(localeValues\.putAll\(getLocaleFileStrings\([^;]*\)\);)', r'\1 ZenGramBadge.brandMap(localeValues);', s)
-          m = re.search(r'private\s+String\s+getStringInte\w*\([^)]*\)\s*\{', s)
-          n6 = 0
-          if m:
-              j = s.index('return value;', m.end())
-              s = s[:j] + 'return ZenGramBadge.brand(value);' + s[j + len('return value;'):]
-              n6 = 1
-          open(p, 'w', encoding='utf-8').write(s)
-          print('LocaleController: appContext.getString:', c1, ', getInstance().getStringV2:', c2, ', return getStringV2:', c3, ', localeValues assign:', c4, ', putAll:', c5, ', getStringInternal:', n6)
-
-          n7 = 0
-          for f in glob.glob('TMessagesProj/src/main/java/**/*.java', recursive=True):
-              t = open(f, encoding='utf-8').read()
-              t2 = t.replace('"Telegram for Android v', '"ZenGram for Android v').replace('"Telegram для Android v', '"ZenGram для Android v')
-              if t2 != t:
-                  open(f, 'w', encoding='utf-8').write(t2)
-                  n7 += 1
-          print('version literals patched in files:', n7)
-          PY
-      - name: Report hard-coded Telegram words
-        run: |
-          {
-            echo "## Java string literals with Telegram"
-            echo '```'
-            grep -rnE '"[^"]*Telegram[^"]*"' --include=*.java TMessagesProj/src/main/java | grep -v 'org\.telegram' | cut -c1-200 | head -120
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Build
-        run: |
-          chmod +x gradlew
-          ./gradlew :TMessagesProj_App:assembleDebug
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ZenGram-apk
-          path: TMessagesProj_App/build/outputs/apk/**/*.apk
