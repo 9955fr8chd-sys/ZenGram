@@ -9,27 +9,29 @@ jobs:
       - name: Print code
         run: |
           J=TMessagesProj/src/main/java/org/telegram
+          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
           {
-            echo "## 1. ChatAvatarContainer 950-1000"
+            echo "## A. Swap set methods"
             echo '```'
-            awk 'NR>=950 && NR<=1000 {printf "%d: %s\n", NR, substr($0,1,150)}' $J/ui/Components/ChatAvatarContainer.java
+            F=$J/ui/Components/AnimatedEmojiDrawable.java
+            for N in $(grep -n 'public boolean set(long' $F | cut -d: -f1); do show $F $N $((N+28)); echo ----; done
             echo '```'
-            echo "## 2. DialogsActivity status"
+            echo "## B. localeValues lines"
             echo '```'
-            grep -n -i 'statusDrawable\|emojiStatus\|StatusBadge' $J/ui/DialogsActivity.java | cut -c1-150 | head -40
+            grep -n 'localeValues' $J/messenger/LocaleController.java | cut -c1-200 | fold -s -w 52 | head -90
             echo '```'
-            echo "## 3. LocaleController internals"
+            echo "## C. formatString"
             echo '```'
-            N=$(grep -n 'getStringInternal(String key, String fallback' $J/messenger/LocaleController.java | head -1 | cut -d: -f1)
-            echo "line $N"
-            [ -n "$N" ] && awk -v s=$N 'NR>=s && NR<=s+25 {printf "%d: %s\n", NR, substr($0,1,150)}' $J/messenger/LocaleController.java
+            F=$J/messenger/LocaleController.java
+            N=$(grep -n 'static String formatString(' $F | head -1 | cut -d: -f1)
+            show $F $N $((N+28))
             echo '```'
-            echo "## 4. Version string"
+            echo "## D. version in settings"
             echo '```'
-            grep -rn 'for Android v\|TelegramForAndroid' --include=*.java TMessagesProj/src/main/java | cut -c1-170 | head -10
+            grep -n 'v%s\|BUILD_VERSION_STRING\|getVersionName' $J/ui/SettingsActivity.java | cut -c1-220 | fold -s -w 52 | head -30
             echo '```'
-            echo "## 5. AppName in DialogsActivity"
+            echo "## E. title in DialogsActivity"
             echo '```'
-            grep -n 'R.string.AppName' $J/ui/DialogsActivity.java | cut -c1-150 | head -10
+            show $J/ui/DialogsActivity.java 3438 3452
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
