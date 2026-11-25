@@ -8,30 +8,29 @@ jobs:
       - uses: actions/checkout@v4
       - name: Print code
         run: |
-          J=TMessagesProj/src/main/java/org/telegram
-          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
+          U=TMessagesProj/src/main/java/org/telegram/ui
+          R=TMessagesProj/src/main/res
+          g() { grep -n "$1" "$2" 2>/dev/null | cut -c1-170 | fold -s -w 52 | head -${3:-16}; }
           {
-            echo "## A. Swap set methods"
+            echo "## A. Files that use EmojiPacksAlert"
             echo '```'
-            F=$J/ui/Components/AnimatedEmojiDrawable.java
-            for N in $(grep -n 'public boolean set(long' $F | cut -d: -f1); do show $F $N $((N+28)); echo ----; done
+            grep -rl 'EmojiPacksAlert' --include=*.java TMessagesProj/src/main/java | head -20
             echo '```'
-            echo "## B. localeValues lines"
+            echo "## B. DialogsActivity title click"
             echo '```'
-            grep -n 'localeValues' $J/messenger/LocaleController.java | cut -c1-200 | fold -s -w 52 | head -90
+            g 'EmojiPacksAlert\|getTitleTextView\|statusDrawable.*click\|showStatusSelect' $U/DialogsActivity.java 18
             echo '```'
-            echo "## C. formatString"
+            echo "## C. ChatAvatarContainer"
             echo '```'
-            F=$J/messenger/LocaleController.java
-            N=$(grep -n 'static String formatString(' $F | head -1 | cut -d: -f1)
-            show $F $N $((N+28))
+            g 'EmojiPacksAlert\|emojiStatusDrawable\|setOnClickListener' $U/Components/ChatAvatarContainer.java 18
             echo '```'
-            echo "## D. version in settings"
+            echo "## D. ProfileActivity emoji status"
             echo '```'
-            grep -n 'v%s\|BUILD_VERSION_STRING\|getVersionName' $J/ui/SettingsActivity.java | cut -c1-220 | fold -s -w 52 | head -30
+            g 'EmojiPacksAlert\|emojiStatus\|showStatus' $U/ProfileActivity.java 22
             echo '```'
-            echo "## E. title in DialogsActivity"
+            echo "## E. FAQ and features"
             echo '```'
-            show $J/ui/DialogsActivity.java 3438 3452
+            g 'FaqUrl\|FeaturesUrl\|TelegramFaq\|TelegramFeatures' $U/SettingsActivity.java 10
+            grep -n 'TelegramFaq\|TelegramFeatures' $R/values/strings.xml | cut -c1-160
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
