@@ -1,7 +1,6 @@
 name: Build ZenGram
 on:
   workflow_dispatch:
-  
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -92,7 +91,7 @@ jobs:
             done
           done
           true
-      - name: Replace intro logo v6
+      - name: Replace intro logo v7
         run: |
           IM=$(command -v magick || command -v convert)
           ICON=$(ls *.png *.PNG *.jpg *.jpeg *.JPG 2>/dev/null | grep -vi '^creator_badge' | head -1)
@@ -110,9 +109,12 @@ jobs:
           sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
           sed -i 's/LocaleController.getString(R.string.Page1Title)/"ZenGram"/' $I
-          grep -n '"ZenGram"' $I || echo "WARNING: title not replaced"
+          grep -n '"ZenGram"' $I || echo "WARNING: intro title not replaced"
           sed -i 's/LocaleController.getString(R.string.Page1Message)/(LocaleController.getString(R.string.Page1Message) + org.telegram.messenger.ZenGramBadge.note())/' $I
           grep -c 'ZenGramBadge.note' $I || echo "WARNING: intro note not added"
+          D=TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java
+          sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $D
+          grep -c 'ImageSpan(logoDrawable)' $D || echo "chat list title image removed"
       - name: Add creator badge image
         run: |
           IM=$(command -v magick || command -v convert)
@@ -183,6 +185,19 @@ jobs:
                   out.append(fix(s.substring(last)));
                   return out.toString();
               }
+
+              public static void brandMap(java.util.Map m) {
+                  if (m == null) return;
+                  try {
+                      for (Object o : m.entrySet()) {
+                          java.util.Map.Entry e = (java.util.Map.Entry) o;
+                          Object v = e.getValue();
+                          if (v instanceof String && ((String) v).indexOf("Telegram") >= 0) {
+                              e.setValue(brand((String) v));
+                          }
+                      }
+                  } catch (Throwable ignore) {}
+              }
           }
           '''
           open(J + 'messenger/ZenGramBadge.java', 'w', encoding='utf-8').write(HELPER)
@@ -191,19 +206,12 @@ jobs:
           s = open(p, encoding='utf-8').read()
           i = s.index('class SwapAnimatedEmojiDrawable')
           head, tail = s[:i], s[i:]
-          print('--- Swap set signatures:')
-          for sg in re.findall(r'public\s+[^\n{;]*\bset\([^)]*\)\s*\{', tail):
-              print('   ', sg.strip())
-          pat = re.compile(r'(public\s+void\s+set\(\s*(?:@\w+\s+)?(?:final\s+)?(Long|long)\s+(\w+)\s*,\s*(?:(?:@\w+\s+)?(?:final\s+)?int\s+\w+\s*,\s*)?(?:final\s+)?boolean\s+(\w+)\s*\)\s*\{)')
+          pat = re.compile(r'(public\s+boolean\s+set\(\s*long\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*boolean\s+(\w+)\s*\)\s*\{)')
           def sw(m):
-              typ, d, a = m.group(2), m.group(3), m.group(4)
-              if typ == 'Long':
-                  cond = '%s != null && %s.longValue() == org.telegram.messenger.ZenGramBadge.MAGIC' % (d, d)
-              else:
-                  cond = '%s == org.telegram.messenger.ZenGramBadge.MAGIC' % d
-              code = ' try { set(org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate(), ' + a + '); return; } catch (Throwable ignore) {} '
-              return m.group(1) + '\n if (' + cond + ') {' + code + '}\n'
-          tail, n1 = pat.subn(sw, tail)
+              d, a = m.group(2), m.group(4)
+              code = 'try { set(org.telegram.messenger.ApplicationLoader.applicationContext.getResources().getDrawable(org.telegram.messenger.R.drawable.creator_badge).mutate(), %s); return true; } catch (Throwable ignore) {}' % a
+              return m.group(1) + '\n if (%s == org.telegram.messenger.ZenGramBadge.MAGIC) { %s }\n' % (d, code)
+          tail, n1 = pat.subn(sw, tail, count=1)
           open(p, 'w', encoding='utf-8').write(head + tail)
           print('Swap.set patched:', n1)
 
@@ -225,27 +233,28 @@ jobs:
 
           p = J + 'messenger/LocaleController.java'
           s = open(p, encoding='utf-8').read()
-          c1 = len(re.findall(r'ApplicationLoader\.applicationContext\.getString\(\s*res\s*\)', s))
-          s = re.sub(r'ApplicationLoader\.applicationContext\.getString\(\s*res\s*\)', 'ZenGramBadge.brand(ApplicationLoader.applicationContext.getString(res))', s)
-          c2 = len(re.findall(r'localeValues\.get\(\s*key\s*\)', s))
-          s = re.sub(r'(localeValues\.get\(\s*key\s*\))', r'ZenGramBadge.brand(\1)', s)
+          s, c1 = re.subn(r'ApplicationLoader\.applicationContext\.getString\(([^()]*)\)', r'ZenGramBadge.brand(ApplicationLoader.applicationContext.getString(\1))', s)
+          s, c2 = re.subn(r'(getInstance\(\)\.getStringV2\([^()]*\))', r'ZenGramBadge.brand(\1)', s)
+          s, c3 = re.subn(r'(return\s+)(getStringV2\([^()]*\))', r'\1ZenGramBadge.brand(\2)', s)
+          s, c4 = re.subn(r'(localeValues\s*=\s*getLocaleFileStrings\([^;]*\);)', r'\1 ZenGramBadge.brandMap(localeValues);', s)
+          s, c5 = re.subn(r'(localeValues\.putAll\(getLocaleFileStrings\([^;]*\)\);)', r'\1 ZenGramBadge.brandMap(localeValues);', s)
           m = re.search(r'private\s+String\s+getStringInte\w*\([^)]*\)\s*\{', s)
-          n4 = 0
+          n6 = 0
           if m:
               j = s.index('return value;', m.end())
               s = s[:j] + 'return ZenGramBadge.brand(value);' + s[j + len('return value;'):]
-              n4 = 1
+              n6 = 1
           open(p, 'w', encoding='utf-8').write(s)
-          print('LocaleController: resource getString wrapped:', c1, ', localeValues.get wrapped:', c2, ', getStringInternal:', n4)
+          print('LocaleController: appContext.getString:', c1, ', getInstance().getStringV2:', c2, ', return getStringV2:', c3, ', localeValues assign:', c4, ', putAll:', c5, ', getStringInternal:', n6)
 
-          n5 = 0
+          n7 = 0
           for f in glob.glob('TMessagesProj/src/main/java/**/*.java', recursive=True):
               t = open(f, encoding='utf-8').read()
-              t2 = t.replace('Telegram for Android v', 'ZenGram for Android v').replace('Telegram для Android v', 'ZenGram для Android v')
+              t2 = t.replace('"Telegram for Android v', '"ZenGram for Android v').replace('"Telegram для Android v', '"ZenGram для Android v')
               if t2 != t:
                   open(f, 'w', encoding='utf-8').write(t2)
-                  n5 += 1
-          print('version literals patched in files:', n5)
+                  n7 += 1
+          print('version literals patched in files:', n7)
           PY
       - name: Report hard-coded Telegram words
         run: |
