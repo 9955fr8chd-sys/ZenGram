@@ -8,29 +8,32 @@ jobs:
       - uses: actions/checkout@v4
       - name: Print code
         run: |
-          U=TMessagesProj/src/main/java/org/telegram/ui
-          R=TMessagesProj/src/main/res
-          g() { grep -n "$1" "$2" 2>/dev/null | cut -c1-170 | fold -s -w 52 | head -${3:-16}; }
+          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
+          S=$(find TMessagesProj/src/main/java -name SimpleTextView.java | head -1)
+          A=$(find TMessagesProj/src/main/java -name AnimatedEmojiDrawable.java | head -1)
+          P=$(find TMessagesProj/src/main/java -name ProfileActivity.java | head -1)
           {
-            echo "## A. Files that use EmojiPacksAlert"
+            echo "## A. SimpleTextView click fields"
             echo '```'
-            grep -rl 'EmojiPacksAlert' --include=*.java TMessagesProj/src/main/java | head -20
+            echo "$S"
+            for N in $(grep -n 'rightDrawableOnClickListener' $S | cut -d: -f1 | head -8); do show $S $((N-2)) $((N+5)); echo ----; done
             echo '```'
-            echo "## B. DialogsActivity title click"
+            echo "## B. SimpleTextView touch"
             echo '```'
-            g 'EmojiPacksAlert\|getTitleTextView\|statusDrawable.*click\|showStatusSelect' $U/DialogsActivity.java 18
+            N=$(grep -n 'public boolean onTouchEvent' $S | head -1 | cut -d: -f1)
+            show $S $N $((N+55))
             echo '```'
-            echo "## C. ChatAvatarContainer"
+            echo "## C. users of setRightDrawableOnClick"
             echo '```'
-            g 'EmojiPacksAlert\|emojiStatusDrawable\|setOnClickListener' $U/Components/ChatAvatarContainer.java 18
+            grep -rn 'setRightDrawableOnClick' --include=*.java TMessagesProj/src/main/java | cut -c1-200 | fold -s -w 52 | head -40
             echo '```'
-            echo "## D. ProfileActivity emoji status"
+            echo "## D. ProfileActivity 5340-5372"
             echo '```'
-            g 'EmojiPacksAlert\|emojiStatus\|showStatus' $U/ProfileActivity.java 22
+            show $P 5340 5372
             echo '```'
-            echo "## E. FAQ and features"
+            echo "## E. Swap class header"
             echo '```'
-            g 'FaqUrl\|FeaturesUrl\|TelegramFaq\|TelegramFeatures' $U/SettingsActivity.java 10
-            grep -n 'TelegramFaq\|TelegramFeatures' $R/values/strings.xml | cut -c1-160
+            N=$(grep -n 'class SwapAnimatedEmojiDrawable' $A | head -1 | cut -d: -f1)
+            show $A $N $((N+14))
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
