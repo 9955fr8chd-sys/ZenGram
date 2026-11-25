@@ -24,7 +24,6 @@ jobs:
           URL = re.compile(r'(\S*(?:://|t\.me|telegram\.org|telegra\.ph|@)\S*)')
           ELEM = re.compile(r'(<(?:string|item)\b([^>]*)>)(.*?)(</(?:string|item)>)', re.S)
           SPECIAL = [('Telegram Premium','Premium'),('Telegram Stars','Stars'),('Telegram Business','Business'),('Звёзды Telegram','Звёзды'),('Telegram для бизнеса','Для бизнеса')]
-          KEEP = re.compile(r'TelegramFaq|TelegramFeatures', re.I)
           def fix(txt):
               parts = URL.split(txt)
               for i in range(0, len(parts), 2):
@@ -34,18 +33,20 @@ jobs:
                   parts[i] = t.replace('Telegram', 'ZenGram')
               return ''.join(parts)
           def repl(m):
-              nm = re.search(r'name="([^"]+)"', m.group(2))
-              if nm and KEEP.fullmatch(nm.group(1)):
-                  return m.group(0)
               return m.group(1) + fix(m.group(3)) + m.group(4)
+          GH = 'https://github.com/9955fr8chd-sys/ZenGram'
           n = 0
+          u = 0
           for f in glob.glob('TMessagesProj/src/main/res/values*/strings*.xml'):
               s = open(f, encoding='utf-8').read()
               s2 = ELEM.sub(repl, s)
-              if s2 != s:
-                  open(f, 'w', encoding='utf-8').write(s2)
+              s3 = re.sub(r'(<string name="(?:TelegramFaqUrl|TelegramFeaturesUrl)"[^>]*>)[^<]*(</string>)', lambda m: m.group(1) + GH + m.group(2), s2)
+              if s3 != s2:
+                  u += 1
+              if s3 != s:
+                  open(f, 'w', encoding='utf-8').write(s3)
                   n += 1
-          print('files changed:', n)
+          print('files changed:', n, ', faq/features url files:', u)
           PY
           find TMessagesProj/src/main/res -name strings.xml -exec sed -i -E 's#(<string name="(AppName|AppNameBeta|Page1Title)"[^>]*>)[^<]*</string>#\1ZenGram</string>#' {} +
       - name: Replace icon v5
@@ -116,8 +117,6 @@ jobs:
           echo "ImageSpan(logoDrawable) lines before: $(grep -c 'ImageSpan(logoDrawable)' $D)"
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $D
           echo "ImageSpan(logoDrawable) lines after: $(grep -c 'ImageSpan(logoDrawable)' $D)"
-          echo "telegram_logo_2 files:"
-          find $R -name 'telegram_logo_2.*'
           find $R -name 'telegram_logo_2.*' -delete
           $IM -background none -fill white -font DejaVu-Sans-Bold -pointsize 56 label:ZenGram -trim +repage -bordercolor none -border 4x4 $R/drawable-nodpi/telegram_logo_2.png
       - name: Add creator badge image
@@ -141,7 +140,7 @@ jobs:
           BADGE=$(find . -iname 'creator_badge*.png' -not -path './.git/*' -not -path './TMessagesProj/*' | head -1)
           echo "Badge file: $BADGE"
           if [ -n "$BADGE" ]; then SRC="$BADGE"; else echo "drawing badge"; SRC=/tmp/badge_gen.png; fi
-          $IM "$SRC" -resize 96x96 $R/drawable-nodpi/creator_badge.png
+          $IM "$SRC" -resize 62x62 -background none -gravity center -extent 96x96 $R/drawable-nodpi/creator_badge.png
       - name: Creator badge and ZenGram words everywhere
         run: |
           python3 - <<'PY'
@@ -177,6 +176,44 @@ jobs:
                   }
               }
 
+              public static void showPlate(final android.view.View anchor) {
+                  try {
+                      final android.content.Context ctx = anchor.getContext();
+                      final boolean ru = "ru".equals(java.util.Locale.getDefault().getLanguage());
+                      final String handle = "@c1csy";
+                      final String rest = ru ? " создатель ZenGram" : " creator of ZenGram";
+                      android.text.SpannableString sp = new android.text.SpannableString(handle + rest);
+                      final android.widget.PopupWindow[] pw = new android.widget.PopupWindow[1];
+                      sp.setSpan(new android.text.style.ClickableSpan() {
+                          @Override public void onClick(android.view.View v) {
+                              try {
+                                  if (pw[0] != null) pw[0].dismiss();
+                                  org.telegram.messenger.browser.Browser.openUrl(ctx, "https://t.me/c1csy");
+                              } catch (Throwable ignore) {}
+                          }
+                          @Override public void updateDrawState(android.text.TextPaint ds) {
+                              ds.setColor(0xFF9DB4FF);
+                              ds.setUnderlineText(false);
+                              ds.setFakeBoldText(true);
+                          }
+                      }, 0, handle.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                      android.widget.TextView tv = new android.widget.TextView(ctx);
+                      tv.setText(sp);
+                      tv.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+                      tv.setTextColor(0xFFFFFFFF);
+                      tv.setTextSize(14);
+                      tv.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(10), AndroidUtilities.dp(14), AndroidUtilities.dp(10));
+                      android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                      bg.setColor(0xF0261A52);
+                      bg.setCornerRadius(AndroidUtilities.dp(14));
+                      tv.setBackground(bg);
+                      pw[0] = new android.widget.PopupWindow(tv, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true);
+                      pw[0].setOutsideTouchable(true);
+                      pw[0].setElevation(AndroidUtilities.dp(8));
+                      pw[0].showAsDropDown(anchor, 0, AndroidUtilities.dp(4));
+                  } catch (Throwable ignore) {}
+              }
+
               public static void apply(TLRPC.User u) {
                   try {
                       if (u != null && u.id == CREATOR_ID) {
@@ -199,7 +236,6 @@ jobs:
 
               public static String brand(String s) {
                   if (s == null || s.indexOf("Telegram") < 0) return s;
-                  if (s.equals("Вопросы о Telegram") || s.equals("Возможности Telegram") || s.equals("Telegram FAQ") || s.equals("Telegram Features")) return s;
                   StringBuilder out = new StringBuilder();
                   java.util.regex.Matcher m = URL.matcher(s);
                   int last = 0;
@@ -217,8 +253,11 @@ jobs:
                   try {
                       for (Object o : m.entrySet()) {
                           java.util.Map.Entry e = (java.util.Map.Entry) o;
+                          Object k = e.getKey();
                           Object v = e.getValue();
-                          if (v instanceof String && ((String) v).indexOf("Telegram") >= 0) {
+                          if (k instanceof String && (k.equals("TelegramFaqUrl") || k.equals("TelegramFeaturesUrl"))) {
+                              e.setValue("https://github.com/9955fr8chd-sys/ZenGram");
+                          } else if (v instanceof String && ((String) v).indexOf("Telegram") >= 0) {
                               e.setValue(brand((String) v));
                           }
                       }
@@ -232,14 +271,53 @@ jobs:
           s = open(p, encoding='utf-8').read()
           i = s.index('class SwapAnimatedEmojiDrawable')
           head, tail = s[:i], s[i:]
+          tail, nf = re.subn(r'(private final Drawable\[\] drawables = new Drawable\[2\];)', lambda m: m.group(1) + '\n public boolean zenBadge;\n public boolean isZenBadge() { return zenBadge || drawables[0] instanceof org.telegram.messenger.ZenGramBadge.NoTint; }\n', tail, count=1)
+          print('Swap flag patched:', nf)
           pat = re.compile(r'(public\s+boolean\s+set\(\s*long\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*boolean\s+(\w+)\s*\)\s*\{)')
           def sw(m):
               d, a = m.group(2), m.group(4)
-              code = 'try { android.graphics.drawable.Drawable zb = org.telegram.messenger.ZenGramBadge.badge(); if (zb != null) { set(zb, %s); return true; } } catch (Throwable ignore) {}' % a
-              return m.group(1) + '\n if (%s == org.telegram.messenger.ZenGramBadge.MAGIC) { %s }\n' % (d, code)
+              code = 'try { android.graphics.drawable.Drawable zb = org.telegram.messenger.ZenGramBadge.badge(); if (zb != null) { set(zb, %s); zenBadge = true; return true; } } catch (Throwable ignore) {}' % a
+              return m.group(1) + '\n if (%s == org.telegram.messenger.ZenGramBadge.MAGIC) { %s }\n zenBadge = false;\n' % (d, code)
           tail, n1 = pat.subn(sw, tail, count=1)
           open(p, 'w', encoding='utf-8').write(head + tail)
           print('Swap.set patched:', n1)
+
+          p = J + 'ui/ActionBar/SimpleTextView.java'
+          s = open(p, encoding='utf-8').read()
+          ZEN = '''private boolean zenDown;
+              private boolean zenHandle(MotionEvent event) {
+                  try {
+                      if (!(rightDrawable instanceof org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) || !((org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) rightDrawable).isZenBadge()) {
+                          zenDown = false;
+                          return false;
+                      }
+                      int a = event.getAction();
+                      AndroidUtilities.rectTmp.set(rightDrawableX - dp(20), rightDrawableY - dp(20), rightDrawableX + dp(20), rightDrawableY + dp(20));
+                      if (a == MotionEvent.ACTION_DOWN && AndroidUtilities.rectTmp.contains((int) event.getX(), (int) event.getY())) {
+                          zenDown = true;
+                          getParent().requestDisallowInterceptTouchEvent(true);
+                          return true;
+                      }
+                      if (zenDown && a == MotionEvent.ACTION_UP) {
+                          zenDown = false;
+                          getParent().requestDisallowInterceptTouchEvent(false);
+                          org.telegram.messenger.ZenGramBadge.showPlate(this);
+                          return true;
+                      }
+                      if (zenDown && a == MotionEvent.ACTION_CANCEL) {
+                          zenDown = false;
+                          getParent().requestDisallowInterceptTouchEvent(false);
+                          return true;
+                      }
+                      if (zenDown) return true;
+                  } catch (Throwable ignore) {}
+                  return false;
+              }
+          '''
+          s, n8 = re.subn(r'(public boolean onTouchEvent\(MotionEvent event\) \{)', lambda m: m.group(1) + '\n if (zenHandle(event)) return true;\n', s, count=1)
+          s, n9 = re.subn(r'(public static interface PressableDrawable \{)', lambda m: ZEN + '\n' + m.group(1), s, count=1)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('SimpleTextView patched:', n8, n9)
 
           if n1 > 0:
               p = J + 'messenger/MessagesController.java'
