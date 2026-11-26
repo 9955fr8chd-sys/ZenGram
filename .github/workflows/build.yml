@@ -80,7 +80,7 @@ jobs:
           import re, os
           n = int(os.environ['N'])
           code = 100000 + n
-          name = '0.2.%d' % n
+          name = '0.1.%d' % n
           changed = []
           for f in ['gradle.properties', 'TMessagesProj_App/build.gradle', 'TMessagesProj/build.gradle', 'build.gradle']:
               if not os.path.exists(f):
@@ -220,7 +220,7 @@ jobs:
           echo "Badge file: $BADGE"
           if [ -n "$BADGE" ]; then SRC="$BADGE"; else echo "drawing badge"; SRC=/tmp/badge_gen.png; fi
           $IM "$SRC" -resize 62x62 -background none -gravity center -extent 96x96 $R/drawable-nodpi/creator_badge.png
-      - name: Creator badge, update check and ZenGram words
+      - name: Creator badge, update check, settings screen and words
         env:
           RUN: ${{ github.run_number }}
         run: |
@@ -298,7 +298,7 @@ jobs:
 
               public static void apply(TLRPC.User u) {
                   try {
-                      if (u != null && u.id == CREATOR_ID) {
+                      if (u != null && u.id == CREATOR_ID && Zen.get("show_creator_badge", true)) {
                           TLRPC.TL_emojiStatus s = new TLRPC.TL_emojiStatus();
                           s.document_id = MAGIC;
                           u.emoji_status = s;
@@ -350,6 +350,26 @@ jobs:
           HELPER = HELPER.replace('__BUILD__', os.environ.get('RUN', '0'))
           open(J + 'messenger/ZenGramBadge.java', 'w', encoding='utf-8').write(HELPER)
 
+          ZEN = r'''package org.telegram.messenger;
+
+          public class Zen {
+              public static boolean get(String key, boolean def) {
+                  try {
+                      return ApplicationLoader.applicationContext.getSharedPreferences("zengram", 0).getBoolean(key, def);
+                  } catch (Throwable t) {
+                      return def;
+                  }
+              }
+
+              public static void set(String key, boolean value) {
+                  try {
+                      ApplicationLoader.applicationContext.getSharedPreferences("zengram", 0).edit().putBoolean(key, value).apply();
+                  } catch (Throwable ignore) {}
+              }
+          }
+          '''
+          open(J + 'messenger/Zen.java', 'w', encoding='utf-8').write(ZEN)
+
           UPDATE = r'''package org.telegram.messenger;
 
           public class ZenUpdate {
@@ -358,16 +378,39 @@ jobs:
               public static void check(final android.app.Activity activity) {
                   if (checked) return;
                   checked = true;
-                  new Thread(new Runnable() {
+                  if (!Zen.get("update_check", true)) return;
+                  run(activity, false);
+              }
+
+              public static void manual(final android.app.Activity activity) {
+                  run(activity, true);
+              }
+
+              private static void toast(final String text) {
+                  AndroidUtilities.runOnUIThread(new Runnable() {
                       @Override public void run() {
                           try {
-                              Thread.sleep(4000);
+                              android.widget.Toast.makeText(ApplicationLoader.applicationContext, text, android.widget.Toast.LENGTH_LONG).show();
+                          } catch (Throwable ignore) {}
+                      }
+                  });
+              }
+
+              private static void run(final android.app.Activity activity, final boolean manual) {
+                  new Thread(new Runnable() {
+                      @Override public void run() {
+                          boolean ru = "ru".equals(java.util.Locale.getDefault().getLanguage());
+                          try {
+                              if (!manual) Thread.sleep(4000);
                               java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL("https://api.github.com/repos/9955fr8chd-sys/ZenGram/releases/latest").openConnection();
                               c.setConnectTimeout(8000);
                               c.setReadTimeout(8000);
                               c.setRequestProperty("User-Agent", "ZenGram");
                               c.setRequestProperty("Accept", "application/vnd.github+json");
-                              if (c.getResponseCode() != 200) return;
+                              if (c.getResponseCode() != 200) {
+                                  if (manual) toast(ru ? "Не удалось проверить обновление" : "Could not check for updates");
+                                  return;
+                              }
                               java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
                               StringBuilder sb = new StringBuilder();
                               String line;
@@ -380,16 +423,21 @@ jobs:
                               int dot = tag.lastIndexOf('.');
                               if (dot < 0) return;
                               int n = Integer.parseInt(tag.substring(dot + 1).trim());
-                              if (n <= ZenGramBadge.BUILD) return;
+                              if (n <= ZenGramBadge.BUILD) {
+                                  if (manual) toast(ru ? "У вас последняя версия" : "You have the latest version");
+                                  return;
+                              }
                               android.content.SharedPreferences sp = ApplicationLoader.applicationContext.getSharedPreferences("zengram", 0);
-                              if (sp.getInt("prompted", 0) >= n) return;
-                              sp.edit().putInt("prompted", n).apply();
+                              if (!manual && sp.getInt("prompted", 0) >= n) return;
+                              if (!manual) sp.edit().putInt("prompted", n).apply();
                               AndroidUtilities.runOnUIThread(new Runnable() {
                                   @Override public void run() {
                                       show(activity, tag, body, url);
                                   }
                               });
-                          } catch (Throwable ignore) {}
+                          } catch (Throwable t) {
+                              if (manual) toast(ru ? "Не удалось проверить обновление" : "Could not check for updates");
+                          }
                       }
                   }).start();
               }
@@ -418,6 +466,130 @@ jobs:
           '''
           open(J + 'messenger/ZenUpdate.java', 'w', encoding='utf-8').write(UPDATE)
 
+          SETTINGS = r'''package org.telegram.ui;
+
+          import android.content.Context;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.Zen;
+          import org.telegram.messenger.ZenGramBadge;
+          import org.telegram.messenger.ZenUpdate;
+          import org.telegram.messenger.browser.Browser;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Cells.TextCheckCell;
+
+          public class ZenSettingsActivity extends BaseFragment {
+
+              private static boolean ru() {
+                  return "ru".equals(java.util.Locale.getDefault().getLanguage());
+              }
+
+              private TextView label(Context c, String text) {
+                  TextView t = new TextView(c);
+                  t.setText(text);
+                  t.setTextSize(14);
+                  t.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                  t.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(14), AndroidUtilities.dp(21), AndroidUtilities.dp(14));
+                  return t;
+              }
+
+              private TextView button(Context c, String text, View.OnClickListener l) {
+                  TextView t = new TextView(c);
+                  t.setText(text);
+                  t.setTextSize(16);
+                  t.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                  t.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                  t.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(16), AndroidUtilities.dp(21), AndroidUtilities.dp(16));
+                  t.setOnClickListener(l);
+                  return t;
+              }
+
+              private void toggle(Context c, LinearLayout list, String title, final String key, boolean def) {
+                  final TextCheckCell cell = new TextCheckCell(c);
+                  cell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                  cell.setTextAndCheck(title, Zen.get(key, def), true);
+                  cell.setOnClickListener(v -> {
+                      boolean n = !cell.isChecked();
+                      cell.setChecked(n);
+                      Zen.set(key, n);
+                  });
+                  list.addView(cell, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+              }
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setTitle(ru() ? "Настройки ZenGram" : "ZenGram settings");
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+
+                  ScrollView scroll = new ScrollView(context);
+                  scroll.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                  LinearLayout list = new LinearLayout(context);
+                  list.setOrientation(LinearLayout.VERTICAL);
+                  scroll.addView(list, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                  list.addView(label(context, ru() ? "Обновления и оформление" : "Updates and appearance"));
+                  toggle(context, list, ru() ? "Проверять обновления при запуске" : "Check for updates on start", "update_check", true);
+                  toggle(context, list, ru() ? "Показывать значок создателя (после перезапуска)" : "Show creator badge (after restart)", "show_creator_badge", true);
+
+                  list.addView(label(context, ru() ? "Ссылки" : "Links"));
+                  final Context ctx = context;
+                  list.addView(button(context, ru() ? "Проверить обновление сейчас" : "Check for updates now", v -> ZenUpdate.manual(getParentActivity())));
+                  list.addView(button(context, ru() ? "Страница версий на GitHub" : "Releases page on GitHub", v -> Browser.openUrl(ctx, "https://github.com/9955fr8chd-sys/ZenGram/releases/latest")));
+                  list.addView(button(context, ru() ? "Создатель: @c1csy" : "Creator: @c1csy", v -> Browser.openUrl(ctx, "https://t.me/c1csy")));
+
+                  list.addView(label(context, "ZenGram 0.1." + ZenGramBadge.BUILD + (ru() ? "\nНеофициальный клиент на платформе Telegram. Новые функции будут добавляться сюда." : "\nUnofficial client built on the Telegram platform. New features will appear here.")));
+
+                  fragmentView = scroll;
+                  return fragmentView;
+              }
+          }
+          '''
+          open(J + 'ui/ZenSettingsActivity.java', 'w', encoding='utf-8').write(SETTINGS)
+
+          p = J + 'ui/SettingsActivity.java'
+          s = open(p, encoding='utf-8').read()
+          ROW = 'items.add(SettingCell.Factory.of(77, 0xFF9A4DFF, 0xFF5A22D6, R.drawable.settings_features, "ru".equals(java.util.Locale.getDefault().getLanguage()) ? "Настройки ZenGram" : "ZenGram settings"));'
+          k1 = 0
+          where = 'none'
+          pos = s.find('items.add(SettingCell.Factory.of(')
+          if pos >= 0:
+              ls = s.rfind('\n', 0, pos) + 1
+              before = s[:ls].rstrip()
+              prev_line = before.split('\n')[-1].strip() if before else ''
+              print('first settings cell, previous line:', prev_line[:120])
+              if not (prev_line.endswith(')') or prev_line.endswith('{') or prev_line.endswith('else')):
+                  s = s[:ls] + '        ' + ROW + '\n' + s[ls:]
+                  k1 = 1
+                  where = 'top'
+          if k1 == 0 and 'R.drawable.settings_gift' in s:
+              i = s.index('R.drawable.settings_gift')
+              key = 'if (items.get(items.size() - 1).viewType != UniversalAdapter.VIEW_TYPE_SHADOW)'
+              if key in s[i:]:
+                  j = s.index(key, i)
+                  s = s[:j] + ROW + '\n        ' + s[j:]
+                  k1 = 1
+                  where = 'fallback'
+          s, k2 = re.subn(r'(\n[ \t]*)(case 17:\s*showDialog\(AlertsCreator\.createSupportAlert)', lambda m: m.group(1) + 'case 77:' + m.group(1) + '    presentSettingFragment(new ZenSettingsActivity());' + m.group(1) + '    break;' + m.group(1) + m.group(2), s, count=1)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('SettingsActivity row:', k1, where, ', click:', k2)
+
           p = J + 'ui/LaunchActivity.java'
           s = open(p, encoding='utf-8').read()
           s, nl = re.subn(r'(protected\s+void\s+onCreate\(\s*Bundle\s+savedInstanceState\s*\)\s*\{)', lambda m: m.group(1) + '\n org.telegram.messenger.ZenUpdate.check(this);\n', s, count=1)
@@ -441,7 +613,7 @@ jobs:
 
           p = J + 'ui/ActionBar/SimpleTextView.java'
           s = open(p, encoding='utf-8').read()
-          ZEN = '''private boolean zenDown;
+          ZENTOUCH = '''private boolean zenDown;
               private boolean zenHandle(MotionEvent event) {
                   try {
                       if (!(rightDrawable instanceof org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) || !((org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable) rightDrawable).isZenBadge()) {
@@ -472,7 +644,7 @@ jobs:
               }
           '''
           s, n8 = re.subn(r'(public boolean onTouchEvent\(MotionEvent event\) \{)', lambda m: m.group(1) + '\n if (zenHandle(event)) return true;\n', s, count=1)
-          s, n9 = re.subn(r'(public static interface PressableDrawable \{)', lambda m: ZEN + '\n' + m.group(1), s, count=1)
+          s, n9 = re.subn(r'(public static interface PressableDrawable \{)', lambda m: ZENTOUCH + '\n' + m.group(1), s, count=1)
           open(p, 'w', encoding='utf-8').write(s)
           print('SimpleTextView patched:', n8, n9)
 
@@ -526,7 +698,7 @@ jobs:
         run: |
           APK=$(ls -S $(find TMessagesProj_App/build/outputs/apk -name '*.apk') | head -1)
           echo "APK: $APK"
-          TAG="v0.2.$N"
+          TAG="v0.1.$N"
           cp "$APK" ZenGram.apk
           cp "$APK" "ZenGram-$TAG.apk"
           if [ -z "$NOTES" ]; then NOTES="Обновление ZenGram $TAG"; fi
