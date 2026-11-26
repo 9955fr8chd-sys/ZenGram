@@ -6,34 +6,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print code
+      - name: Print build files
         run: |
-          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
-          S=$(find TMessagesProj/src/main/java -name SimpleTextView.java | head -1)
-          A=$(find TMessagesProj/src/main/java -name AnimatedEmojiDrawable.java | head -1)
-          P=$(find TMessagesProj/src/main/java -name ProfileActivity.java | head -1)
+          f() { fold -s -w 52; }
           {
-            echo "## A. SimpleTextView click fields"
+            echo "## A. Gradle files"
             echo '```'
-            echo "$S"
-            for N in $(grep -n 'rightDrawableOnClickListener' $S | cut -d: -f1 | head -8); do show $S $((N-2)) $((N+5)); echo ----; done
+            ls TMessagesProj_App | f
+            ls TMessagesProj/config 2>/dev/null | f
             echo '```'
-            echo "## B. SimpleTextView touch"
+            echo "## B. applicationId and signing"
             echo '```'
-            N=$(grep -n 'public boolean onTouchEvent' $S | head -1 | cut -d: -f1)
-            show $S $N $((N+55))
+            grep -rn "applicationId\|namespace\|signingConfig\|storeFile\|storePassword\|keyAlias\|minifyEnabled\|productFlavors\|buildTypes\|flavorDimensions" TMessagesProj_App/build.gradle* TMessagesProj/build.gradle* build.gradle* gradle.properties 2>/dev/null | cut -c1-200 | f | head -70
             echo '```'
-            echo "## C. users of setRightDrawableOnClick"
+            echo "## C. flavors and types"
             echo '```'
-            grep -rn 'setRightDrawableOnClick' --include=*.java TMessagesProj/src/main/java | cut -c1-200 | fold -s -w 52 | head -40
+            grep -n "^\s*\(debug\|release\|standalone\|afat\|bundleAfat\|standalone[A-Za-z]*\)\s*{" TMessagesProj_App/build.gradle* | f | head -30
             echo '```'
-            echo "## D. ProfileActivity 5340-5372"
+            echo "## D. package in manifests"
             echo '```'
-            show $P 5340 5372
-            echo '```'
-            echo "## E. Swap class header"
-            echo '```'
-            N=$(grep -n 'class SwapAnimatedEmojiDrawable' $A | head -1 | cut -d: -f1)
-            show $A $N $((N+14))
+            grep -rn "package=\|android:authorities" --include=AndroidManifest.xml TMessagesProj_App TMessagesProj | cut -c1-200 | f | head -30
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
