@@ -4,6 +4,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -12,11 +14,59 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Create signing key (first run only)
+        env:
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          if [ -f signing/zengram.p12 ]; then echo "Signing key already exists"; exit 0; fi
+          if [ -z "$KEY_PASS" ]; then echo "WARNING: secret KEY_PASS is empty, no key created"; exit 0; fi
+          mkdir -p signing
+          keytool -genkeypair -storetype PKCS12 -keystore signing/zengram.p12 -alias zengram -keyalg RSA -keysize 4096 -validity 36500 -storepass "$KEY_PASS" -keypass "$KEY_PASS" -dname "CN=ZenGram, O=ZenGram, C=RU"
+          git config user.name "zengram-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add signing/zengram.p12
+          git commit -m "Add signing key"
+          git push
+          echo "Signing key created"
       - name: Insert API keys
         run: |
           F=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
           sed -i "s/APP_ID = [0-9]*;/APP_ID = ${{ secrets.API_ID }};/" $F
           sed -i "s/APP_HASH = \"[0-9a-f]*\";/APP_HASH = \"${{ secrets.API_HASH }}\";/" $F
+      - name: Package name and signing
+        env:
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          echo "APP_PACKAGE definitions:"
+          grep -rn "APP_PACKAGE" --include=gradle.properties --include=*.gradle . | cut -c1-160
+          for f in $(grep -rl "^APP_PACKAGE" --include=gradle.properties .); do
+            sed -i -E 's/^(APP_PACKAGE[[:space:]]*=[[:space:]]*).*/\1com.zengram.app/' $f
+            grep -n "^APP_PACKAGE" $f
+          done
+          sed -i 's/applicationIdSuffix "\.beta"//' TMessagesProj_App/build.gradle
+          python3 - <<'PY'
+          import re, os, json, copy
+          p = 'TMessagesProj_App/google-services.json'
+          d = json.load(open(p))
+          new = copy.deepcopy(d['client'][0])
+          new['client_info']['android_client_info']['package_name'] = 'com.zengram.app'
+          d['client'].append(new)
+          json.dump(d, open(p, 'w'), indent=2)
+          print('google-services clients:', len(d['client']))
+          if os.path.exists('signing/zengram.p12') and os.environ.get('KEY_PASS'):
+              p = 'TMessagesProj_App/build.gradle'
+              s = open(p).read()
+              s, a = re.subn(r'storeFile\s+file\([^)]*release\.keystore[^)]*\)', 'storeFile file("../signing/zengram.p12")\n            storeType "pkcs12"', s)
+              s, b = re.subn(r'storePassword\s+\S+', 'storePassword System.getenv("KEY_PASS")', s)
+              s, c = re.subn(r'keyAlias\s+\S+', 'keyAlias "zengram"', s)
+              s, e = re.subn(r'keyPassword\s+\S+', 'keyPassword System.getenv("KEY_PASS")', s)
+              if e == 0:
+                  s = s.replace('keyAlias "zengram"', 'keyAlias "zengram"\n            keyPassword System.getenv("KEY_PASS")')
+              open(p, 'w').write(s)
+              print('signing patched: storeFile', a, 'storePassword', b, 'keyAlias', c, 'keyPassword', e)
+          else:
+              print('WARNING: own key not available, building with the old public key')
+          PY
       - name: Rename app everywhere
         run: |
           python3 - <<'PY'
@@ -360,6 +410,8 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Build
+        env:
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
           chmod +x gradlew
           ./gradlew :TMessagesProj_App:assembleDebug
