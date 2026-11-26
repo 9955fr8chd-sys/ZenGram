@@ -1,6 +1,11 @@
 name: Build ZenGram
 on:
   workflow_dispatch:
+    inputs:
+      notes:
+        description: "Что нового (текст для релиза)"
+        required: false
+        default: ""
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,8 +42,6 @@ jobs:
         env:
           KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
-          echo "APP_PACKAGE definitions:"
-          grep -rn "APP_PACKAGE" --include=gradle.properties --include=*.gradle . | cut -c1-160
           for f in $(grep -rl "^APP_PACKAGE" --include=gradle.properties .); do
             sed -i -E 's/^(APP_PACKAGE[[:space:]]*=[[:space:]]*).*/\1com.zengram.app/' $f
             grep -n "^APP_PACKAGE" $f
@@ -48,10 +51,12 @@ jobs:
           import re, os, json, copy
           p = 'TMessagesProj_App/google-services.json'
           d = json.load(open(p))
-          new = copy.deepcopy(d['client'][0])
-          new['client_info']['android_client_info']['package_name'] = 'com.zengram.app'
-          d['client'].append(new)
-          json.dump(d, open(p, 'w'), indent=2)
+          names = [c['client_info']['android_client_info']['package_name'] for c in d['client']]
+          if 'com.zengram.app' not in names:
+              new = copy.deepcopy(d['client'][0])
+              new['client_info']['android_client_info']['package_name'] = 'com.zengram.app'
+              d['client'].append(new)
+              json.dump(d, open(p, 'w'), indent=2)
           print('google-services clients:', len(d['client']))
           if os.path.exists('signing/zengram.p12') and os.environ.get('KEY_PASS'):
               p = 'TMessagesProj_App/build.gradle'
@@ -67,6 +72,30 @@ jobs:
           else:
               print('WARNING: own key not available, building with the old public key')
           PY
+      - name: Version for updates
+        env:
+          N: ${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          import re, os
+          n = int(os.environ['N'])
+          code = 100000 + n
+          name = '0.1.%d' % n
+          changed = []
+          for f in ['gradle.properties', 'TMessagesProj_App/build.gradle', 'TMessagesProj/build.gradle', 'build.gradle']:
+              if not os.path.exists(f):
+                  continue
+              s = open(f).read()
+              s2 = re.sub(r'(APP_VERSION_CODE\s*=\s*)\d+', r'\g<1>%d' % code, s)
+              s2 = re.sub(r'(APP_VERSION_NAME\s*=\s*).*', r'\g<1>%s' % name, s2)
+              s2 = re.sub(r'(versionCode\s+)\d+', r'\g<1>%d' % code, s2)
+              s2 = re.sub(r'(versionName\s+)"[^"]*"', r'\g<1>"%s"' % name, s2)
+              if s2 != s:
+                  open(f, 'w').write(s2)
+                  changed.append(f)
+          print('version patched in:', changed, ', code', code, ', name', name)
+          PY
+          grep -rn "APP_VERSION\|versionCode\|versionName" gradle.properties TMessagesProj_App/build.gradle TMessagesProj/build.gradle | cut -c1-160 | head -20
       - name: Rename app everywhere
         run: |
           python3 - <<'PY'
@@ -191,10 +220,12 @@ jobs:
           echo "Badge file: $BADGE"
           if [ -n "$BADGE" ]; then SRC="$BADGE"; else echo "drawing badge"; SRC=/tmp/badge_gen.png; fi
           $IM "$SRC" -resize 62x62 -background none -gravity center -extent 96x96 $R/drawable-nodpi/creator_badge.png
-      - name: Creator badge and ZenGram words everywhere
+      - name: Creator badge, update check and ZenGram words
+        env:
+          RUN: ${{ github.run_number }}
         run: |
           python3 - <<'PY'
-          import re, glob
+          import re, os, glob
           J = 'TMessagesProj/src/main/java/org/telegram/'
           HELPER = r'''package org.telegram.messenger;
 
@@ -203,6 +234,7 @@ jobs:
           public class ZenGramBadge {
               public static final long CREATOR_ID = 8492204695L;
               public static final long MAGIC = 6710000001234L;
+              public static final int BUILD = __BUILD__;
               private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("\\S*(?:://|t\\.me|telegram\\.org|telegra\\.ph|@)\\S*");
 
               public static class NoTint extends android.graphics.drawable.BitmapDrawable {
@@ -315,7 +347,82 @@ jobs:
               }
           }
           '''
+          HELPER = HELPER.replace('__BUILD__', os.environ.get('RUN', '0'))
           open(J + 'messenger/ZenGramBadge.java', 'w', encoding='utf-8').write(HELPER)
+
+          UPDATE = r'''package org.telegram.messenger;
+
+          public class ZenUpdate {
+              private static boolean checked;
+
+              public static void check(final android.app.Activity activity) {
+                  if (checked) return;
+                  checked = true;
+                  new Thread(new Runnable() {
+                      @Override public void run() {
+                          try {
+                              Thread.sleep(4000);
+                              java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL("https://api.github.com/repos/9955fr8chd-sys/ZenGram/releases/latest").openConnection();
+                              c.setConnectTimeout(8000);
+                              c.setReadTimeout(8000);
+                              c.setRequestProperty("User-Agent", "ZenGram");
+                              c.setRequestProperty("Accept", "application/vnd.github+json");
+                              if (c.getResponseCode() != 200) return;
+                              java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(c.getInputStream(), "UTF-8"));
+                              StringBuilder sb = new StringBuilder();
+                              String line;
+                              while ((line = r.readLine()) != null) sb.append(line);
+                              r.close();
+                              org.json.JSONObject j = new org.json.JSONObject(sb.toString());
+                              final String tag = j.optString("tag_name", "");
+                              final String body = j.optString("body", "");
+                              final String url = j.optString("html_url", "https://github.com/9955fr8chd-sys/ZenGram/releases/latest");
+                              int dot = tag.lastIndexOf('.');
+                              if (dot < 0) return;
+                              int n = Integer.parseInt(tag.substring(dot + 1).trim());
+                              if (n <= ZenGramBadge.BUILD) return;
+                              android.content.SharedPreferences sp = ApplicationLoader.applicationContext.getSharedPreferences("zengram", 0);
+                              if (sp.getInt("prompted", 0) >= n) return;
+                              sp.edit().putInt("prompted", n).apply();
+                              AndroidUtilities.runOnUIThread(new Runnable() {
+                                  @Override public void run() {
+                                      show(activity, tag, body, url);
+                                  }
+                              });
+                          } catch (Throwable ignore) {}
+                      }
+                  }).start();
+              }
+
+              private static void show(final android.app.Activity a, String tag, String body, final String url) {
+                  try {
+                      if (a == null || a.isFinishing()) return;
+                      boolean ru = "ru".equals(java.util.Locale.getDefault().getLanguage());
+                      String msg = (ru ? "Вышла новая версия " : "New version ") + tag;
+                      if (body != null && body.trim().length() > 0) msg = msg + "\n\n" + body.trim();
+                      new android.app.AlertDialog.Builder(a)
+                          .setTitle("ZenGram")
+                          .setMessage(msg)
+                          .setPositiveButton(ru ? "Скачать" : "Download", new android.content.DialogInterface.OnClickListener() {
+                              @Override public void onClick(android.content.DialogInterface d, int w) {
+                                  try {
+                                      a.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+                                  } catch (Throwable ignore) {}
+                              }
+                          })
+                          .setNegativeButton(ru ? "Позже" : "Later", null)
+                          .show();
+                  } catch (Throwable ignore) {}
+              }
+          }
+          '''
+          open(J + 'messenger/ZenUpdate.java', 'w', encoding='utf-8').write(UPDATE)
+
+          p = J + 'ui/LaunchActivity.java'
+          s = open(p, encoding='utf-8').read()
+          s, nl = re.subn(r'(protected\s+void\s+onCreate\(\s*Bundle\s+savedInstanceState\s*\)\s*\{)', lambda m: m.group(1) + '\n org.telegram.messenger.ZenUpdate.check(this);\n', s, count=1)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('LaunchActivity update hook:', nl)
 
           p = J + 'ui/Components/AnimatedEmojiDrawable.java'
           s = open(p, encoding='utf-8').read()
@@ -401,14 +508,6 @@ jobs:
           open(p, 'w', encoding='utf-8').write(s)
           print('LocaleController: appContext.getString:', c1, ', getInstance().getStringV2:', c2, ', return getString(null,res):', c3, ', localeValues assign:', c4, ', putAll:', c5, ', getStringInternal:', n6)
           PY
-      - name: Report hard-coded Telegram words
-        run: |
-          {
-            echo "## Java string literals with Telegram"
-            echo '```'
-            grep -rnE '"[^"]*Telegram[^"]*"' --include=*.java TMessagesProj/src/main/java | grep -v 'org\.telegram' | cut -c1-200 | head -120
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
       - name: Build
         env:
           KEY_PASS: ${{ secrets.KEY_PASS }}
@@ -419,3 +518,18 @@ jobs:
         with:
           name: ZenGram-apk
           path: TMessagesProj_App/build/outputs/apk/**/*.apk
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.inputs.notes }}
+          N: ${{ github.run_number }}
+        run: |
+          APK=$(ls -S $(find TMessagesProj_App/build/outputs/apk -name '*.apk') | head -1)
+          echo "APK: $APK"
+          TAG="v0.1.$N"
+          cp "$APK" ZenGram.apk
+          cp "$APK" "ZenGram-$TAG.apk"
+          if [ -z "$NOTES" ]; then NOTES="Обновление ZenGram $TAG"; fi
+          gh release create "$TAG" ZenGram.apk "ZenGram-$TAG.apk" --target "${{ github.sha }}" --title "ZenGram $TAG" --notes "$NOTES" --latest
+          echo "Release: https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "Latest: https://github.com/${{ github.repository }}/releases/latest" >> "$GITHUB_STEP_SUMMARY"
