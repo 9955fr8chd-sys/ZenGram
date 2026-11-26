@@ -80,7 +80,7 @@ jobs:
           import re, os
           n = int(os.environ['N'])
           code = 100000 + n
-          name = '0.1.%d' % n
+          name = '0.2.%d' % n
           changed = []
           for f in ['gradle.properties', 'TMessagesProj_App/build.gradle', 'TMessagesProj/build.gradle', 'build.gradle']:
               if not os.path.exists(f):
@@ -526,7 +526,7 @@ jobs:
         run: |
           APK=$(ls -S $(find TMessagesProj_App/build/outputs/apk -name '*.apk') | head -1)
           echo "APK: $APK"
-          TAG="v0.1.$N"
+          TAG="v0.2.$N"
           cp "$APK" ZenGram.apk
           cp "$APK" "ZenGram-$TAG.apk"
           if [ -z "$NOTES" ]; then NOTES="Обновление ZenGram $TAG"; fi
