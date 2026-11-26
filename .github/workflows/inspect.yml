@@ -6,25 +6,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print build files
+      - name: Print settings code
         run: |
-          f() { fold -s -w 52; }
+          U=TMessagesProj/src/main/java/org/telegram/ui
+          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
+          around() { N=$(grep -n "$2" "$1" | head -1 | cut -d: -f1); [ -n "$N" ] && show "$1" $((N-$3)) $((N+$4)); }
           {
-            echo "## A. Gradle files"
+            echo "## A. items list in SettingsActivity"
             echo '```'
-            ls TMessagesProj_App | f
-            ls TMessagesProj/config 2>/dev/null | f
+            around $U/SettingsActivity.java 'R.drawable.settings_features' 14 6
             echo '```'
-            echo "## B. applicationId and signing"
+            echo "## B. click handling"
             echo '```'
-            grep -rn "applicationId\|namespace\|signingConfig\|storeFile\|storePassword\|keyAlias\|minifyEnabled\|productFlavors\|buildTypes\|flavorDimensions" TMessagesProj_App/build.gradle* TMessagesProj/build.gradle* build.gradle* gradle.properties 2>/dev/null | cut -c1-200 | f | head -70
+            around $U/SettingsActivity.java 'R.string.TelegramFaqUrl' 18 6
             echo '```'
-            echo "## C. flavors and types"
+            echo "## C. presentFragment examples"
             echo '```'
-            grep -n "^\s*\(debug\|release\|standalone\|afat\|bundleAfat\|standalone[A-Za-z]*\)\s*{" TMessagesProj_App/build.gradle* | f | head -30
+            grep -n 'presentFragment(new' $U/SettingsActivity.java | cut -c1-150 | fold -s -w 52 | head -12
             echo '```'
-            echo "## D. package in manifests"
+            echo "## D. SettingCell factory"
             echo '```'
-            grep -rn "package=\|android:authorities" --include=AndroidManifest.xml TMessagesProj_App TMessagesProj | cut -c1-200 | f | head -30
+            grep -n 'static .* of(\|class SettingCell\|class Factory' $U/SettingsActivity.java | cut -c1-170 | fold -s -w 52 | head -12
+            echo '```'
+            echo "## E. TextCheckCell API"
+            echo '```'
+            F=$(find TMessagesProj/src/main/java -name TextCheckCell.java | head -1)
+            grep -n 'public TextCheckCell(\|public void setTextAndCheck\|public void setChecked\|public boolean isChecked' $F | cut -c1-170 | fold -s -w 52
+            echo '```'
+            echo "## F. small fragment example"
+            echo '```'
+            around $U/ChangeBioActivity.java 'public View createView' 0 42
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
