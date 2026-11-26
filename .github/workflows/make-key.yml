@@ -1,0 +1,23 @@
+name: Make signing key
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  key:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create keystore once
+        env:
+          KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: |
+          if [ -f signing/zengram.p12 ]; then echo "Key already exists, nothing to do"; exit 0; fi
+          if [ -z "$KEY_PASS" ]; then echo "ERROR: secret KEY_PASS is empty"; exit 1; fi
+          mkdir -p signing
+          keytool -genkeypair -storetype PKCS12 -keystore signing/zengram.p12 -alias zengram -keyalg RSA -keysize 4096 -validity 36500 -storepass "$KEY_PASS" -keypass "$KEY_PASS" -dname "CN=ZenGram, O=ZenGram, C=RU"
+          git config user.name "zengram-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add signing/zengram.p12
+          git commit -m "Add signing key"
+          git push
