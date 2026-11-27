@@ -6,22 +6,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print code
+      - name: Print settings list start
         run: |
-          U=TMessagesProj/src/main/java/org/telegram/ui
-          f() { cut -c1-170 | fold -s -w 52; }
+          F=TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
+          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | cut -c1-200 | fold -s -w 52; }
+          N=$(grep -n 'R.drawable.settings_features' $F | head -1 | cut -d: -f1)
+          S=$(awk -v n=$N 'NR<=n && /^    (private|public|protected)[^=;]*\(.*\)[ ]*\{/ {l=NR} END{print l}' $F)
           {
-            echo "## A. stories bar in DialogsActivity"
+            echo "## A. start of items method (line $S)"
             echo '```'
-            grep -n 'dialogStoriesCell' $U/DialogsActivity.java | f | head -30
-            echo '```'
-            echo "## B. bottom bar files"
-            echo '```'
-            grep -rln 'class [A-Za-z]*\(BottomTabs\|BottomBar\|NavBar\|TabBar\|FloatingBottom\)' --include=*.java TMessagesProj/src/main/java | head -10
-            grep -rn 'bottomTabs\|BottomTabs' --include=*.java $U/LaunchActivity.java | f | head -14
-            echo '```'
-            echo "## C. theme colors for the bar"
-            echo '```'
-            grep -rn 'key_chats_menuBackground\|key_actionBarDefault\b' --include=Theme.java TMessagesProj/src/main/java | f | head -6
+            show $F $S $((S+40))
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
