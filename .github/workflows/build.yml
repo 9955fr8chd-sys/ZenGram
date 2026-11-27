@@ -185,6 +185,8 @@ jobs:
           SIDE=$((W*100/64))
           echo "Plane width: $W, canvas: $SIDE"
           $IM /tmp/plane.png -background none -gravity center -extent ${SIDE}x${SIDE} -resize 512x512 $R/drawable-nodpi/intro_tg_plane.png
+          $IM /tmp/plane.png -channel RGB -evaluate set 100% +channel -resize 68x68 -background none -gravity center -extent 96x96 $R/drawable-nodpi/zen_settings_icon.png
+          ls -la $R/drawable-nodpi/zen_settings_icon.png
           I=TMessagesProj/src/main/java/org/telegram/ui/IntroActivity.java
           sed -i "/logo color/s/ThemeColors.TELEGRAM_COLOR/0xFF060215/" $I
           sed -i '/ssb.setSpan(new ImageSpan(logoDrawable)/d' $I
@@ -544,9 +546,9 @@ jobs:
                   list.setOrientation(LinearLayout.VERTICAL);
                   scroll.addView(list, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-                  list.addView(label(context, ru() ? "Обновления и оформление" : "Updates and appearance"));
-                  toggle(context, list, ru() ? "Проверять обновления при запуске" : "Check for updates on start", "update_check", true);
-                  toggle(context, list, ru() ? "Показывать значок создателя (после перезапуска)" : "Show creator badge (after restart)", "show_creator_badge", true);
+                  list.addView(label(context, ru() ? "Обновления и оформление (значок: после перезапуска)" : "Updates and appearance (badge: after restart)"));
+                  toggle(context, list, ru() ? "Проверять обновления" : "Check for updates", "update_check", true);
+                  toggle(context, list, ru() ? "Значок создателя" : "Creator badge", "show_creator_badge", true);
 
                   list.addView(label(context, ru() ? "Ссылки" : "Links"));
                   final Context ctx = context;
@@ -565,33 +567,30 @@ jobs:
 
           p = J + 'ui/SettingsActivity.java'
           s = open(p, encoding='utf-8').read()
-          ROW = 'items.add(SettingCell.Factory.of(77, 0xFF9A4DFF, 0xFF5A22D6, R.drawable.settings_features, "ru".equals(java.util.Locale.getDefault().getLanguage()) ? "Настройки ZenGram" : "ZenGram settings"));'
+          ROW = 'items.add(SettingCell.Factory.of(77, 0xFF9A4DFF, 0xFF5A22D6, R.drawable.zen_settings_icon, "ru".equals(java.util.Locale.getDefault().getLanguage()) ? "Настройки ZenGram" : "ZenGram settings"));'
           k1 = 0
           where = 'none'
-          try:
-              rus = open('TMessagesProj/src/main/res/values-ru/strings.xml', encoding='utf-8').read()
-          except Exception:
-              rus = ''
-          names = re.findall(r'<string name="(\w+)">Аккаунт</string>', rus)
-          print('string names for Аккаунт:', names)
-          for nm in names:
-              idx = s.find('R.string.' + nm)
-              while idx >= 0 and k1 == 0:
-                  st = s.rfind('items.add(', 0, idx)
-                  if st >= 0 and idx - st < 400:
-                      ls = s.rfind('\n', 0, st) + 1
-                      if s[ls:st].strip() == '':
-                          before = s[:ls].rstrip()
-                          prev = before.split('\n')[-1].strip() if before else ''
-                          print('account cell found, previous line:', prev[:120])
-                          if not (prev.endswith(')') or prev.endswith('else')):
-                              s = s[:ls] + '        ' + ROW + '\n' + s[ls:]
-                              k1 = 1
-                              where = 'above Account'
-                  if k1 == 0:
-                      idx = s.find('R.string.' + nm, idx + 1)
-              if k1:
-                  break
+          anchor = s.find('R.drawable.settings_features')
+          if anchor >= 0:
+              sigs = list(re.finditer(r'\n[ \t]{4}(?:private|public|protected)[^\n=;{]*\([^)]*\)\s*\{', s[:anchor]))
+              if sigs:
+                  m = sigs[-1]
+                  print('items method:', m.group(0).strip()[:160])
+                  ins = m.end()
+                  if 'items' in m.group(0):
+                      mc = re.match(r'\s*items\.clear\(\);', s[ins:ins + 200])
+                      if mc:
+                          ins += mc.end()
+                      s = s[:ins] + '\n        ' + ROW + '\n' + s[ins:]
+                      k1 = 1
+                      where = 'top (method start)'
+                  else:
+                      j = s.find('items.add(', ins)
+                      if j >= 0:
+                          ls = s.rfind('\n', 0, j) + 1
+                          s = s[:ls] + '        ' + ROW + '\n' + s[ls:]
+                          k1 = 1
+                          where = 'top (first items.add of method)'
           if k1 == 0 and 'R.drawable.settings_gift' in s:
               i = s.index('R.drawable.settings_gift')
               key = 'if (items.get(items.size() - 1).viewType != UniversalAdapter.VIEW_TYPE_SHADOW)'
