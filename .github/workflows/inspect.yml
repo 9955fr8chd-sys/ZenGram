@@ -6,35 +6,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print settings code
+      - name: Print code
         run: |
           U=TMessagesProj/src/main/java/org/telegram/ui
-          show() { awk -v a="$2" -v b="$3" 'NR>=a && NR<=b {printf "%d: %s\n", NR, $0}' "$1" | fold -s -w 52; }
-          around() { N=$(grep -n "$2" "$1" | head -1 | cut -d: -f1); [ -n "$N" ] && show "$1" $((N-$3)) $((N+$4)); }
+          f() { cut -c1-170 | fold -s -w 52; }
           {
-            echo "## A. items list in SettingsActivity"
+            echo "## A. stories bar in DialogsActivity"
             echo '```'
-            around $U/SettingsActivity.java 'R.drawable.settings_features' 14 6
+            grep -n 'dialogStoriesCell' $U/DialogsActivity.java | f | head -30
             echo '```'
-            echo "## B. click handling"
+            echo "## B. bottom bar files"
             echo '```'
-            around $U/SettingsActivity.java 'R.string.TelegramFaqUrl' 18 6
+            grep -rln 'class [A-Za-z]*\(BottomTabs\|BottomBar\|NavBar\|TabBar\|FloatingBottom\)' --include=*.java TMessagesProj/src/main/java | head -10
+            grep -rn 'bottomTabs\|BottomTabs' --include=*.java $U/LaunchActivity.java | f | head -14
             echo '```'
-            echo "## C. presentFragment examples"
+            echo "## C. theme colors for the bar"
             echo '```'
-            grep -n 'presentFragment(new' $U/SettingsActivity.java | cut -c1-150 | fold -s -w 52 | head -12
-            echo '```'
-            echo "## D. SettingCell factory"
-            echo '```'
-            grep -n 'static .* of(\|class SettingCell\|class Factory' $U/SettingsActivity.java | cut -c1-170 | fold -s -w 52 | head -12
-            echo '```'
-            echo "## E. TextCheckCell API"
-            echo '```'
-            F=$(find TMessagesProj/src/main/java -name TextCheckCell.java | head -1)
-            grep -n 'public TextCheckCell(\|public void setTextAndCheck\|public void setChecked\|public boolean isChecked' $F | cut -c1-170 | fold -s -w 52
-            echo '```'
-            echo "## F. small fragment example"
-            echo '```'
-            around $U/ChangeBioActivity.java 'public View createView' 0 42
+            grep -rn 'key_chats_menuBackground\|key_actionBarDefault\b' --include=Theme.java TMessagesProj/src/main/java | f | head -6
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
