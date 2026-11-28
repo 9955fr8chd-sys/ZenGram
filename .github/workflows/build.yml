@@ -567,30 +567,14 @@ jobs:
 
           p = J + 'ui/SettingsActivity.java'
           s = open(p, encoding='utf-8').read()
-          ROW = 'items.add(SettingCell.Factory.of(77, 0xFF9A4DFF, 0xFF5A22D6, R.drawable.zen_settings_icon, "ru".equals(java.util.Locale.getDefault().getLanguage()) ? "Настройки ZenGram" : "ZenGram settings"));'
+          ROW = 'items.add(SettingCell.Factory.of(77, 0xFF9A4DFF, 0xFF5A22D6, R.drawable.zen_settings_icon, "ru".equals(java.util.Locale.getDefault().getLanguage()) ? "Настройки ZenGram" : "ZenGram settings")); items.add(UItem.asShadow(null));'
           k1 = 0
           where = 'none'
-          anchor = s.find('R.drawable.settings_features')
-          if anchor >= 0:
-              sigs = list(re.finditer(r'\n[ \t]{4}(?:private|public|protected)[^\n=;{]*\([^)]*\)\s*\{', s[:anchor]))
-              if sigs:
-                  m = sigs[-1]
-                  print('items method:', m.group(0).strip()[:160])
-                  ins = m.end()
-                  if 'items' in m.group(0):
-                      mc = re.match(r'\s*items\.clear\(\);', s[ins:ins + 200])
-                      if mc:
-                          ins += mc.end()
-                      s = s[:ins] + '\n        ' + ROW + '\n' + s[ins:]
-                      k1 = 1
-                      where = 'top (method start)'
-                  else:
-                      j = s.find('items.add(', ins)
-                      if j >= 0:
-                          ls = s.rfind('\n', 0, j) + 1
-                          s = s[:ls] + '        ' + ROW + '\n' + s[ls:]
-                          k1 = 1
-                          where = 'top (first items.add of method)'
+          mm = re.search(r'items\.add\(UItem\.asCustomShadow\(topView[^;]*\);', s)
+          if mm:
+              s = s[:mm.end()] + '\n        ' + ROW + s[mm.end():]
+              k1 = 1
+              where = 'below profile header'
           if k1 == 0 and 'R.drawable.settings_gift' in s:
               i = s.index('R.drawable.settings_gift')
               key = 'if (items.get(items.size() - 1).viewType != UniversalAdapter.VIEW_TYPE_SHADOW)'
